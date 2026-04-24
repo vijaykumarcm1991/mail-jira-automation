@@ -3,7 +3,7 @@ import email
 from email.header import decode_header
 from datetime import datetime
 import pytz
-
+from app.services.jira_service import create_jira_ticket
 from app.db.mongo import emails_collection
 from app.utils.helpers import generate_internal_id
 from app.models.email_model import create_email_doc
@@ -77,6 +77,12 @@ def fetch_unseen_emails():
             "message_id": message_id,
             "created_at": datetime.now(IST)
         }
+
+        # ✅ Create Jira ticket
+        jira_id = create_jira_ticket(data)
+
+        data["jira_id"] = jira_id
+        data["status"] = "Open" if jira_id else "Failed"
 
         doc = create_email_doc(data)
         emails_collection.insert_one(doc)

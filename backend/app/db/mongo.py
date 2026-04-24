@@ -9,5 +9,11 @@ db = client["mail_jira_db"]
 # Collections
 emails_collection = db["emails"]
 
+existing_indexes = emails_collection.index_information()
 emails_collection.create_index("internal_id", unique=True)
-emails_collection.create_index("message_id", unique=True)
+if "message_id_1" not in existing_indexes:
+    emails_collection.create_index(
+        "message_id",
+        unique=True,
+        sparse=True
+    )
