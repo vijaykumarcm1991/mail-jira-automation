@@ -38,6 +38,8 @@ def fetch_unseen_emails():
 
         msg = email.message_from_bytes(raw_email)
 
+        internal_id = generate_internal_id()
+
         message_id = msg.get("Message-ID")
 
         # fallback if missing

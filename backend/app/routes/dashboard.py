@@ -7,7 +7,10 @@ router = APIRouter()
 
 @router.get("/api/tickets")
 def get_tickets():
-    tickets = list(emails_collection.find({}, {"_id": 0}))
+    tickets = list(
+        emails_collection.find({}, {"_id": 0})
+        .sort("created_at", -1)   # ✅ latest first
+    )
     return tickets
 
 @router.post("/api/tickets")
