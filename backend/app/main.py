@@ -5,8 +5,13 @@ from app.routes import dashboard
 from app.routes import pages
 from starlette.middleware.sessions import SessionMiddleware
 from app.routes import auth
+from app.services.scheduler import start_background_thread
 
 app = FastAPI()
+
+@app.on_event("startup")
+def startup_event():
+    start_background_thread()
 
 app.include_router(dashboard.router)
 app.include_router(pages.router)

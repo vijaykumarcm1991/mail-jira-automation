@@ -1,0 +1,87 @@
+import imaplib
+import email
+from email.header import decode_header
+from datetime import datetime
+import pytz
+
+from app.db.mongo import emails_collection
+from app.utils.helpers import generate_internal_id
+from app.models.email_model import create_email_doc
+from app.config.settings import (
+    EMAIL_ACCOUNT,
+    EMAIL_PASSWORD,
+    IMAP_SERVER,
+    TIMEZONE
+)
+
+IST = pytz.timezone(TIMEZONE)
+
+
+def clean_text(text):
+    return text.strip() if text else ""
+
+
+def fetch_unseen_emails():
+    mail = imaplib.IMAP4_SSL(IMAP_SERVER)
+    mail.login(EMAIL_ACCOUNT, EMAIL_PASSWORD)
+    mail.select("inbox")
+
+    status, messages = mail.search(None, '(UNSEEN)')
+    email_ids = messages[0].split()
+
+    for e_id in email_ids:
+        _, msg_data = mail.fetch(e_id, "(RFC822)")
+        # ✅ Mark as seen AFTER fetching
+        mail.store(e_id, '+FLAGS', '\\Seen')
+        raw_email = msg_data[0][1]
+
+        msg = email.message_from_bytes(raw_email)
+
+        message_id = msg.get("Message-ID")
+
+        # fallback if missing
+        if not message_id:
+            message_id = f"fallback-{internal_id}"
+
+        # ✅ Prevent duplicates
+        if emails_collection.find_one({"message_id": message_id}):
+            continue
+
+        subject, encoding = decode_header(msg["Subject"])[0]
+        if isinstance(subject, bytes):
+            subject = subject.decode(encoding or "utf-8")
+
+        from_email = msg.get("From")
+        cc = msg.get("Cc")
+
+        body = ""
+
+        if msg.is_multipart():
+            for part in msg.walk():
+                if part.get_content_type() == "text/plain":
+                    body = part.get_payload(decode=True).decode()
+                    break
+        else:
+            body = msg.get_payload(decode=True).decode()
+
+        internal_id = generate_internal_id()
+
+        data = {
+            "internal_id": internal_id,
+            "subject": clean_text(subject),
+            "from": from_email,
+            "cc": cc.split(",") if cc else [],
+            "jira_id": None,
+            "status": "New",
+            "description": clean_text(body),
+            "message_id": message_id,
+            "created_at": datetime.now(IST)
+        }
+
+        doc = create_email_doc(data)
+        emails_collection.insert_one(doc)
+
+        # ✅ 3. mark as seen
+        mail.store(e_id, '+FLAGS', '\\Seen')
+
+    mail.logout()

@@ -13,7 +13,7 @@ services:
     depends_on:
       - mongo
     environment:
-      - MONGO_URI=mongodb://mongo:27017
+      - TZ=Asia/Kolkata
 
   mongo:
     image: mongo:6
@@ -22,6 +22,8 @@ services:
       - "27017:27017"
     volumes:
       - mongo_data:/data/db
+    environment:
+      - TZ=Asia/Kolkata
 
 volumes:
   mongo_data:

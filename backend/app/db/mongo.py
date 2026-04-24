@@ -10,3 +10,4 @@ db = client["mail_jira_db"]
 emails_collection = db["emails"]
 
 emails_collection.create_index("internal_id", unique=True)
+emails_collection.create_index("message_id", unique=True)

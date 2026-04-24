@@ -1,4 +1,7 @@
 from datetime import datetime
+import pytz
+
+IST = pytz.timezone("Asia/Kolkata")
 
 def create_email_doc(data):
     return {
@@ -8,5 +11,5 @@ def create_email_doc(data):
         "cc": data.get("cc", []),
         "jira_id": data.get("jira_id"),
         "status": data.get("status", "Open"),
-        "created_at": datetime.utcnow()
+        "created_at": datetime.now(IST)
     }
