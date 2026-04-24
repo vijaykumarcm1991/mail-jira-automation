@@ -1,14 +1,28 @@
 from fastapi import APIRouter
+from app.db.mongo import emails_collection
+from app.utils.helpers import generate_internal_id
+from app.models.email_model import create_email_doc
 
 router = APIRouter()
 
 @router.get("/api/tickets")
 def get_tickets():
-    return [
-        {
-            "internal_id": "INT-001",
-            "subject": "Login issue",
-            "jira_id": "SUP-101",
-            "status": "Open"
-        }
-    ]
+    tickets = list(emails_collection.find({}, {"_id": 0}))
+    return tickets
+
+@router.post("/api/tickets")
+def create_ticket():
+    internal_id = generate_internal_id()
+
+    data = {
+        "internal_id": internal_id,
+        "subject": "Test Email Issue",
+        "from": "test@gmail.com",
+        "jira_id": "SUP-123",
+        "status": "Open"
+    }
+
+    doc = create_email_doc(data)
+    emails_collection.insert_one(doc)
+
+    return {"message": "Ticket created", "internal_id": internal_id}
