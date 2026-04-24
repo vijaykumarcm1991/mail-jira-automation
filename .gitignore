@@ -1,0 +1,4 @@
+.env
+build_start.sh
+git_commit_push.sh
+.dockerignore

@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Mail to Jira Automation</title>
+
+    <!-- Tailwind -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Alpine -->
+    <script src="https://unpkg.com/alpinejs" defer></script>
+</head>
+<body class="bg-gray-100">
+
+    <div class="p-4 bg-blue-600 text-white">
+        <div class="flex justify-between items-center">
+            <h1 class="text-lg font-bold">Mail → Jira Automation</h1>
+
+            <div class="space-x-4">
+                <a href="/dashboard" class="hover:underline">Dashboard</a>
+                <a href="/mappings" class="hover:underline">Mappings</a>
+                <a href="/logout" class="hover:underline text-red-200">Logout</a>
+            </div>
+        </div>
+    </div>
+
+    <div class="p-6">
+        {% block content %}{% endblock %}
+    </div>
+
+</body>
+</html>
