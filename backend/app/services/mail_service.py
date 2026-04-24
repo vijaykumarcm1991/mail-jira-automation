@@ -13,6 +13,7 @@ from app.config.settings import (
     IMAP_SERVER,
     TIMEZONE
 )
+from app.services.rule_engine import apply_rules
 
 IST = pytz.timezone(TIMEZONE)
 
@@ -78,8 +79,11 @@ def fetch_unseen_emails():
             "created_at": datetime.now(IST)
         }
 
-        # ✅ Create Jira ticket
-        jira_id = create_jira_ticket(data)
+        # ✅ Apply rules
+        rule_actions = apply_rules(data)
+
+        # ✅ Pass to Jira
+        jira_id = create_jira_ticket(data, rule_actions)
 
         data["jira_id"] = jira_id
         data["status"] = "Open" if jira_id else "Failed"
