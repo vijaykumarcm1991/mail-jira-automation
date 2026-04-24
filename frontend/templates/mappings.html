@@ -2,10 +2,254 @@
 
 {% block content %}
 
-<h2 class="text-xl font-semibold mb-4">Mappings</h2>
+<div x-data="ruleApp()" x-init="init()" class="max-w-5xl mx-auto">
 
-<div class="bg-white p-4 rounded shadow">
-    <p>Mapping configuration UI coming next phase...</p>
+    <h2 class="text-xl font-semibold mb-4">Rule Engine</h2>
+
+    <!-- New Rule Form -->
+    <div class="bg-white p-5 rounded shadow mb-6">
+
+        <h3 class="font-semibold text-lg mb-3">Create / Edit Rule</h3>
+
+        <!-- Rule Name -->
+        <input x-model="rule.rule_name"
+            placeholder="Rule Name"
+            class="border p-2 w-full mb-3">
+
+        <!-- Active Toggle -->
+        <label class="flex items-center gap-2 mb-3">
+            <input type="checkbox" x-model="rule.active">
+            <span>Active</span>
+        </label>
+
+        <!-- Priority -->
+        <input type="number"
+            x-model="rule.priority"
+            placeholder="Priority (1 = highest)"
+            class="border p-2 w-full mb-4">
+        
+        <div class="mb-3">
+            <label class="font-semibold">Condition Type</label>
+            <select x-model="rule.conditions.type" class="border p-2 w-full mt-1">
+                <option value="AND">ALL conditions (AND)</option>
+                <option value="OR">ANY condition (OR)</option>
+            </select>
+        </div>
+        
+        <!-- CONDITIONS -->
+        <h4 class="font-semibold mb-2">Conditions (Subject OR Body match)</h4>
+
+        <input x-model="rule.conditions.sender_contains"
+            placeholder="Sender contains (e.g. gmail.com)"
+            class="border p-2 w-full mb-2">
+
+        <div class="flex gap-2 mb-2">
+            <input x-model="subjectInput"
+                placeholder="Keyword (matches subject OR body)"
+                class="border p-2 w-full">
+
+            <button @click="addKeyword"
+                    class="bg-blue-600 text-white px-3 rounded">
+                Add
+            </button>
+        </div>
+
+        <div class="flex flex-wrap gap-2 mb-4">
+            <template x-for="(k, index) in rule.conditions.subject_contains">
+                <span class="bg-gray-200 px-2 py-1 rounded text-sm flex items-center gap-1">
+                    <span x-text="k"></span>
+                    <button @click="removeKeyword(index)" class="text-red-500">×</button>
+                </span>
+            </template>
+        </div>
+
+        <!-- ACTIONS -->
+        <h4 class="font-semibold mb-2">Actions</h4>
+
+        <div class="grid grid-cols-2 gap-3">
+
+            <select x-model="rule.actions.application" class="border p-2">
+                <option value="">Application</option>
+                <template x-for="opt in options['customfield_10085']">
+                    <option :value="opt.value" x-text="opt.value"></option>
+                </template>
+            </select>
+
+            <select x-model="rule.actions.geography" class="border p-2">
+                <option value="">Geography</option>
+                <template x-for="opt in options['customfield_10097']">
+                    <option :value="opt.value" x-text="opt.value"></option>
+                </template>
+            </select>
+
+            <select x-model="rule.actions.country" class="border p-2">
+                <option value="">Country</option>
+                <template x-for="opt in options['customfield_10091']">
+                    <option :value="opt.value" x-text="opt.value"></option>
+                </template>
+            </select>
+
+            <select x-model="rule.actions.unit" class="border p-2">
+                <option value="">Unit</option>
+                <template x-for="opt in options['customfield_10086']">
+                    <option :value="opt.value" x-text="opt.value"></option>
+                </template>
+            </select>
+
+        </div>
+
+        <!-- Buttons -->
+        <div class="flex gap-3 mt-4">
+            <button @click="saveRule"
+                    class="bg-green-600 text-white px-4 py-2 rounded mt-3"
+                    x-text="isEdit ? 'Update Rule' : 'Save Rule'">
+            </button>
+
+            <button @click="resetForm"
+                    class="bg-gray-400 text-white px-4 py-2 rounded">
+                Reset
+            </button>
+        </div>
+
+    </div>
+
+    <!-- Existing Rules -->
+    <div class="bg-white p-4 rounded shadow">
+
+        <h3 class="font-semibold mb-3">Existing Rules</h3>
+
+        <template x-for="r in rules">
+            <div class="border p-3 mb-3 rounded">
+
+                <div class="flex justify-between items-center">
+                    <div>
+                        <div class="font-semibold" x-text="r.rule_name"></div>
+                        <div class="text-xs text-gray-500">
+                            Priority: <span x-text="r.priority"></span> |
+                            Status: <span x-text="r.active ? 'Active' : 'Disabled'"></span>
+                        </div>
+                    </div>
+
+                    <div class="flex gap-2">
+                        <button @click="editRule(r)"
+                                class="text-blue-600 text-sm">Edit</button>
+
+                        <button @click="deleteRule(r.rule_name)"
+                                class="text-red-600 text-sm">Delete</button>
+                    </div>
+                </div>
+
+                <div class="text-sm mt-2">
+                    Sender: <span x-text="r.conditions.sender_contains"></span>
+                </div>
+
+                <div class="text-sm">
+                    Keywords:
+                    <template x-for="k in r.conditions.subject_contains">
+                        <span class="bg-gray-200 px-1 rounded text-xs mr-1" x-text="k"></span>
+                    </template>
+                </div>
+
+                <div class="text-sm mt-2">
+                    Actions: <span x-text="JSON.stringify(r.actions)"></span>
+                </div>
+
+            </div>
+        </template>
+
+    </div>
+
 </div>
+
+<script>
+function ruleApp() {
+    return {
+        subjectInput: "",
+        rules: [],
+        options: {},
+        isEdit: false,
+        rule: {
+            rule_name: "",
+            conditions: {
+                type: "AND",
+                sender_contains: "",
+                subject_contains: []
+            },
+            actions: {},
+            priority: 1,
+            active: true
+        },
+
+        async init() {
+            await this.loadOptions()
+            await this.loadRules()
+        },
+
+        async loadOptions() {
+            const res = await fetch('/api/jira-options')
+            const data = await res.json()
+
+            data.forEach(f => {
+                this.options[f.field_key] = f.options
+            })
+        },
+
+        async loadRules() {
+            const res = await fetch('/api/rules')
+            this.rules = await res.json()
+        },
+
+        addKeyword() {
+            if (!this.subjectInput) return
+            this.rule.conditions.subject_contains.push(this.subjectInput)
+            this.subjectInput = ""
+        },
+
+        async saveRule() {
+            await fetch('/api/rules', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(this.rule)
+            })
+
+            this.resetForm()      // ✅ better than rewriting object
+            this.isEdit = false   // ✅ ADD THIS
+
+            await this.loadRules()
+        },
+
+        async deleteRule(name) {
+            await fetch(`/api/rules/${name}`, { method: 'DELETE' })
+            await this.loadRules()
+        },
+
+        // ✅ ADD THESE METHODS HERE
+        removeKeyword(index) {
+            this.rule.conditions.subject_contains.splice(index, 1)
+        },
+
+        editRule(r) {
+            this.rule = JSON.parse(JSON.stringify(r))
+            this.isEdit = true
+        },
+
+        resetForm() {
+            this.rule = {
+                rule_name: "",
+                conditions: {
+                    type: "AND",   // ✅ keep consistency
+                    sender_contains: "",
+                    subject_contains: []
+                },
+                actions: {},
+                priority: 1,
+                active: true
+            }
+
+            this.isEdit = false   // ✅ ADD THIS
+        }
+    }
+}
+</script>
 
 {% endblock %}

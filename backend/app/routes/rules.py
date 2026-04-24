@@ -17,10 +17,16 @@ def get_rules():
 
 
 @router.post("/api/rules")
-def create_rule(rule: dict):
+def create_or_update_rule(rule: dict):
     rule["created_at"] = datetime.now(IST)
-    collection.insert_one(rule)
-    return {"message": "Rule created"}
+
+    collection.update_one(
+        {"rule_name": rule["rule_name"]},   # unique key
+        {"$set": rule},
+        upsert=True
+    )
+
+    return {"message": "Rule saved"}
 
 
 @router.delete("/api/rules/{rule_name}")

@@ -6,19 +6,30 @@ rules_collection = db["rules"]
 def match_conditions(email_data, conditions):
     sender = email_data.get("from", "").lower()
     subject = email_data.get("subject", "").lower()
+    body = email_data.get("description", "").lower()
+
+    condition_type = conditions.get("type", "AND")
+
+    results = []
 
     # Sender condition
     if "sender_contains" in conditions:
-        if conditions["sender_contains"].lower() not in sender:
-            return False
+        results.append(
+            conditions["sender_contains"].lower() in sender
+        )
 
-    # Subject condition (ANY match)
+    # Subject/Body keywords
     if "subject_contains" in conditions:
         keywords = conditions["subject_contains"]
-        if not any(k.lower() in subject for k in keywords):
-            return False
+        results.append(
+            any(k.lower() in subject or k.lower() in body for k in keywords)
+        )
 
-    return True
+    # Apply AND / OR
+    if condition_type == "OR":
+        return any(results)
+    else:
+        return all(results)
 
 
 def apply_rules(email_data):
