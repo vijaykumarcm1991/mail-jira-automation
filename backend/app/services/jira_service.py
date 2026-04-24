@@ -3,9 +3,11 @@ from app.config.settings import (
     JIRA_BASE_URL,
     JIRA_EMAIL,
     JIRA_API_TOKEN,
-    JIRA_PROJECT_KEY
+    JIRA_CUSTOM_FIELDS,
+    TIMEZONE,
+    JIRA_PROJECT_KEY,      # ✅ ADD THIS
+    JIRA_ISSUE_TYPE        # ✅ ADD THIS
 )
-
 
 def create_jira_ticket(data):
     url = f"{JIRA_BASE_URL}/rest/api/3/issue"
@@ -39,7 +41,7 @@ def create_jira_ticket(data):
                 ]
             },
             "issuetype": {
-                "name": "Incident"
+                "name": JIRA_ISSUE_TYPE
             }
         }
     }

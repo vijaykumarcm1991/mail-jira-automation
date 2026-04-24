@@ -1,6 +1,7 @@
 import time
 import threading
 from app.services.mail_service import fetch_unseen_emails
+from app.services.jira_sync_service import sync_jira_fields
 
 
 def start_mail_listener():
@@ -8,12 +9,16 @@ def start_mail_listener():
         try:
             print("Checking for new emails...")
             fetch_unseen_emails()
+
+            # ✅ Sync Jira fields every cycle (temporary)
+            sync_jira_fields()
+
         except Exception as e:
             print("Error:", e)
 
-        time.sleep(30)
-
+        time.sleep(60) # Check every minute
 
 def start_background_thread():
     thread = threading.Thread(target=start_mail_listener, daemon=True)
     thread.start()
+    

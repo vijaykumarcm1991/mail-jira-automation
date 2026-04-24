@@ -6,6 +6,7 @@ from app.routes import pages
 from starlette.middleware.sessions import SessionMiddleware
 from app.routes import auth
 from app.services.scheduler import start_background_thread
+from app.routes import jira_options
 
 app = FastAPI()
 
@@ -16,6 +17,7 @@ def startup_event():
 app.include_router(dashboard.router)
 app.include_router(pages.router)
 app.include_router(auth.router)
+app.include_router(jira_options.router)
 
 app.add_middleware(SessionMiddleware, secret_key="1893557437c3772417d7ccc83de6b11dc033d13ff7543e1e1c965a59bf614270")
 

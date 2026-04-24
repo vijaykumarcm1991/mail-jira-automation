@@ -15,3 +15,13 @@ JIRA_BASE_URL = os.getenv("JIRA_BASE_URL")
 JIRA_EMAIL = os.getenv("JIRA_EMAIL")
 JIRA_API_TOKEN = os.getenv("JIRA_API_TOKEN")
 JIRA_PROJECT_KEY = os.getenv("JIRA_PROJECT_KEY")
+JIRA_ISSUE_TYPE = os.getenv("JIRA_ISSUE_TYPE", "Incident")
+
+JIRA_CUSTOM_FIELDS = [
+    {"key": "customfield_10085", "name": "Application"},
+    {"key": "customfield_10097", "name": "Geography"},
+    {"key": "customfield_10091", "name": "Country"},
+    {"key": "customfield_10086", "name": "Unit"}
+]
+
+# ❗ Source excluded (fixed as EMAIL)
