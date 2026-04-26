@@ -39,9 +39,25 @@
         <!-- CONDITIONS -->
         <h4 class="font-semibold mb-2">Conditions (Subject OR Body match)</h4>
 
-        <input x-model="rule.conditions.sender_contains"
-            placeholder="Sender contains (e.g. gmail.com)"
-            class="border p-2 w-full mb-2">
+        <div class="flex gap-2 mb-2">
+            <input x-model="senderInput"
+                placeholder="Add sender (e.g. gmail.com)"
+                class="border p-2 w-full">
+            
+            <button @click="addSender"
+                    class="bg-blue-600 text-white px-3 rounded">
+                Add
+            </button>
+        </div>
+
+        <div class="flex flex-wrap gap-2 mb-3">
+            <template x-for="(s, index) in rule.conditions.sender_contains">
+                <span class="bg-gray-200 px-2 py-1 rounded text-sm flex items-center gap-1">
+                    <span x-text="s"></span>
+                    <button @click="removeSender(index)" class="text-red-500">×</button>
+                </span>
+            </template>
+        </div>
 
         <div class="flex gap-2 mb-2">
             <input x-model="subjectInput"
@@ -172,6 +188,7 @@
 function ruleApp() {
     return {
         subjectInput: "",
+        senderInput: "",
         rules: [],
         options: {},
         isEdit: false,
@@ -179,7 +196,7 @@ function ruleApp() {
             rule_name: "",
             conditions: {
                 type: "AND",
-                sender_contains: "",
+                sender_contains: [],
                 subject_contains: []
             },
             actions: {},
@@ -240,12 +257,26 @@ function ruleApp() {
             this.isEdit = true
         },
 
+        addSender() {
+            if (!this.senderInput) return
+
+            if (!this.rule.conditions.sender_contains.includes(this.senderInput)) {
+                this.rule.conditions.sender_contains.push(this.senderInput)
+            }
+
+            this.senderInput = ""
+        },
+
+        removeSender(index) {
+            this.rule.conditions.sender_contains.splice(index, 1)
+        },
+
         resetForm() {
             this.rule = {
                 rule_name: "",
                 conditions: {
                     type: "AND",   // ✅ keep consistency
-                    sender_contains: "",
+                    sender_contains: [],
                     subject_contains: []
                 },
                 actions: {},

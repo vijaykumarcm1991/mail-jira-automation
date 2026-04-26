@@ -2,10 +2,7 @@
 
 {% block content %}
 
-<div x-data="{ tickets: [] }"
-     x-init="fetch('/api/tickets')
-     .then(res => res.json())
-     .then(data => tickets = data)">
+<div x-data="dashboardApp()" x-init="init()">
 
     <h2 class="text-xl font-semibold mb-4">Dashboard</h2>
 
@@ -31,6 +28,57 @@
         </tbody>
     </table>
 
+    <div class="bg-white p-4 rounded shadow mt-6">
+
+        <h3 class="font-semibold mb-3">Rule Execution Logs</h3>
+
+        <template x-for="log in logs">
+            <div class="border p-2 mb-2 rounded text-sm">
+
+                <div>
+                    <strong x-text="log.internal_id"></strong>
+                    →
+                    <span x-text="log.rule_name || 'No Rule Matched'"></span>
+                </div>
+
+                <div class="text-gray-500">
+                    <span x-text="new Date(log.timestamp).toLocaleString()"></span>
+                </div>
+
+                <div>
+                    Actions:
+                    <span x-text="JSON.stringify(log.actions || {})"></span>
+                </div>
+
+            </div>
+        </template>
+
+    </div>
+
 </div>
+
+<script>
+function dashboardApp() {
+    return {
+        tickets: [],
+        logs: [],
+
+        async init() {
+            await this.loadTickets()
+            await this.loadLogs()
+        },
+
+        async loadTickets() {
+            const res = await fetch('/api/tickets')
+            this.tickets = await res.json()
+        },
+
+        async loadLogs() {
+            const res = await fetch('/api/rule-logs')
+            this.logs = await res.json()
+        }
+    }
+}
+</script>
 
 {% endblock %}

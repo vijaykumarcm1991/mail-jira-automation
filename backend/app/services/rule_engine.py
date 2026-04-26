@@ -1,4 +1,7 @@
 from app.db.mongo import db
+from datetime import datetime
+import pytz
+from app.config.settings import TIMEZONE
 
 rules_collection = db["rules"]
 
@@ -12,10 +15,12 @@ def match_conditions(email_data, conditions):
 
     results = []
 
-    # Sender condition
+    # Sender conditions (multiple)
     if "sender_contains" in conditions:
+        sender_list = conditions["sender_contains"]
+
         results.append(
-            conditions["sender_contains"].lower() in sender
+            any(s.lower() in sender for s in sender_list)
         )
 
     # Subject/Body keywords
@@ -37,8 +42,29 @@ def apply_rules(email_data):
         rules_collection.find({"active": True}).sort("priority", 1)
     )
 
+    log_collection = db["rule_logs"]
+    IST = pytz.timezone(TIMEZONE)
+
     for rule in rules:
-        if match_conditions(email_data, rule.get("conditions", {})):
+        matched = match_conditions(email_data, rule.get("conditions", {}))
+
+        if matched:
+            log_collection.insert_one({
+                "internal_id": email_data.get("internal_id"),
+                "rule_name": rule.get("rule_name"),
+                "matched": True,
+                "actions": rule.get("actions", {}),
+                "timestamp": datetime.now(IST)
+            })
+
             return rule.get("actions", {})
+
+    # no match case
+    log_collection.insert_one({
+        "internal_id": email_data.get("internal_id"),
+        "rule_name": None,
+        "matched": False,
+        "timestamp": datetime.now(IST)
+    })
 
     return {}
