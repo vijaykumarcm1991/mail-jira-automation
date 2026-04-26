@@ -21,7 +21,8 @@ JIRA_CUSTOM_FIELDS = [
     {"key": "customfield_10085", "name": "Application"},
     {"key": "customfield_10097", "name": "Geography"},
     {"key": "customfield_10091", "name": "Country"},
-    {"key": "customfield_10086", "name": "Unit"}
+    {"key": "customfield_10086", "name": "Unit"},
+    {"key": "priority", "name": "Priority"}
 ]
 
 # ❗ Source excluded (fixed as EMAIL)

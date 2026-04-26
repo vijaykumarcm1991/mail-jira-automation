@@ -96,6 +96,13 @@
                 </template>
             </select>
 
+            <select x-model="rule.actions.priority" class="border p-2">
+                <option value="">Priority</option>
+                <template x-for="opt in options['priority']">
+                    <option :value="opt.value" x-text="opt.value"></option>
+                </template>
+            </select>
+
         </div>
 
         <!-- Buttons -->

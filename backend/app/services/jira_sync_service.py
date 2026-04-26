@@ -52,23 +52,28 @@ def extract_field_options(meta_response):
 
             fields = issuetype.get("fields", {})
 
+            # ✅ Handle custom fields
             for field_key, field_data in fields.items():
 
-                if field_key not in [f["key"] for f in JIRA_CUSTOM_FIELDS]:
-                    continue
+                if field_key in [f["key"] for f in JIRA_CUSTOM_FIELDS if f["key"] != "priority"]:
 
-                allowed = field_data.get("allowedValues", [])
+                    allowed = field_data.get("allowedValues", [])
 
-                options = []
+                    options = [
+                        {"id": opt.get("id"), "value": opt.get("value")}
+                        for opt in allowed if "value" in opt
+                    ]
 
-                for opt in allowed:
-                    if "value" in opt:
-                        options.append({
-                            "id": opt.get("id"),
-                            "value": opt.get("value")
-                        })
+                    result[field_key] = options
 
-                result[field_key] = options
+            # ✅ Handle PRIORITY separately
+            if "priority" in fields:
+                allowed = fields["priority"].get("allowedValues", [])
+
+                result["priority"] = [
+                    {"id": opt.get("id"), "value": opt.get("name")}
+                    for opt in allowed
+                ]
 
     return result
 

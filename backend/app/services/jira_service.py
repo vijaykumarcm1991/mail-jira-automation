@@ -69,7 +69,13 @@ def create_jira_ticket(data, rule_actions):
         fields["customfield_10086"] = {
             "value": rule_actions["unit"]
         }
-
+    
+    # ✅ PRIORITY SUPPORT
+    if rule_actions.get("priority"):
+        fields["priority"] = {
+            "name": rule_actions["priority"]
+        }
+    
     # ✅ Step 3: Final payload
     payload = {
         "fields": fields
