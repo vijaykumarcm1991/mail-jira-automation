@@ -14,6 +14,13 @@ from app.config.settings import (
     TIMEZONE
 )
 from app.services.rule_engine import apply_rules
+import smtplib
+from email.mime.text import MIMEText
+from app.config.settings import SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS
+from app.db.mongo import db
+from email.mime.multipart import MIMEMultipart
+from email.mime.base import MIMEBase
+from email import encoders
 
 IST = pytz.timezone(TIMEZONE)
 
@@ -87,6 +94,19 @@ def fetch_unseen_emails():
         # ✅ Pass to Jira
         jira_id = create_jira_ticket(data, rule_actions)
 
+        if jira_id:
+            subject = f"Ticket Created: {jira_id}"
+
+            template = db["email_templates"].find_one({"type": "create"})
+            body = template["body"].replace("{{jira_id}}", jira_id)
+
+            send_email(
+                to_list=[from_email],
+                cc_list=data.get("cc", []),
+                subject=subject,
+                body=body
+            )
+
         data["jira_id"] = jira_id
         data["status"] = "Open" if jira_id else "Failed"
 
@@ -97,3 +117,31 @@ def fetch_unseen_emails():
         mail.store(e_id, '+FLAGS', '\\Seen')
 
     mail.logout()
+
+def send_email(to_list, subject, body, cc_list=None, attachments=None):
+
+    msg = MIMEMultipart()
+    msg["Subject"] = subject
+    msg["From"] = EMAIL_ACCOUNT
+    msg["To"] = ", ".join(to_list)
+
+    if cc_list:
+        msg["Cc"] = ", ".join(cc_list)
+        recipients = to_list + cc_list
+    else:
+        recipients = to_list
+
+    msg.attach(MIMEText(body, "plain"))
+
+    # ✅ Attach files
+    if attachments:
+        for filename, content in attachments:
+            part = MIMEBase("application", "octet-stream")
+            part.set_payload(content)
+            encoders.encode_base64(part)
+            part.add_header("Content-Disposition", f"attachment; filename={filename}")
+            msg.attach(part)
+
+    with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT) as server:
+        server.login(SMTP_USER, SMTP_PASS)
+        server.sendmail(EMAIL_ACCOUNT, recipients, msg.as_string())

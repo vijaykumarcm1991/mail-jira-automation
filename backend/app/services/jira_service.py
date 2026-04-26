@@ -92,3 +92,39 @@ def create_jira_ticket(data, rule_actions):
     else:
         print("Jira Error:", response.text)
         return None
+    
+def get_latest_comment(issue_key):
+    url = f"{JIRA_BASE_URL}/rest/api/3/issue/{issue_key}/comment"
+
+    auth = (JIRA_EMAIL, JIRA_API_TOKEN)
+    response = requests.get(url, auth=auth)
+
+    if response.status_code != 200:
+        return ""
+
+    comments = response.json().get("comments", [])
+    if not comments:
+        return ""
+
+    latest = comments[-1]
+    return latest.get("body", {}).get("content", [{}])[0].get("content", [{}])[0].get("text", "")
+
+
+def get_attachments(issue_key):
+    url = f"{JIRA_BASE_URL}/rest/api/3/issue/{issue_key}"
+
+    auth = (JIRA_EMAIL, JIRA_API_TOKEN)
+    response = requests.get(url, auth=auth)
+
+    if response.status_code != 200:
+        return []
+
+    attachments = response.json()["fields"].get("attachment", [])
+
+    files = []
+    for att in attachments:
+        file_resp = requests.get(att["content"], auth=auth)
+        if file_resp.status_code == 200:
+            files.append((att["filename"], file_resp.content))
+
+    return files

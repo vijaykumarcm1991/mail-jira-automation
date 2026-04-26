@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div x-data="templateApp()" x-init="loadTemplates()">
+
+    <h2 class="text-xl font-semibold mb-4">Email Templates</h2>
+
+    <template x-for="t in templates">
+        <div class="bg-white p-4 mb-4 rounded shadow">
+
+            <h3 class="font-bold mb-2" x-text="t.type.toUpperCase()"></h3>
+
+            <input x-model="t.subject"
+                   class="border p-2 w-full mb-2"
+                   placeholder="Subject">
+
+            <textarea x-model="t.body"
+                      class="border p-2 w-full h-32"
+                      placeholder="Body"></textarea>
+
+            <button @click="saveTemplate(t)"
+                    class="bg-blue-600 text-white px-3 py-1 mt-2 rounded">
+                Save
+            </button>
+
+        </div>
+    </template>
+
+</div>
+
+<script>
+function templateApp() {
+    return {
+        templates: [],
+
+        async loadTemplates() {
+            const res = await fetch('/api/templates')
+            this.templates = await res.json()
+        },
+
+        async saveTemplate(t) {
+            await fetch('/api/templates', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(t)
+            })
+            alert("Saved")
+        }
+    }
+}
+</script>
+
+{% endblock %}

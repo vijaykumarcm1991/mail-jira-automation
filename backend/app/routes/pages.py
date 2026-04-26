@@ -1,7 +1,6 @@
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from fastapi.responses import RedirectResponse
 from app.config.settings import JIRA_BASE_URL
 
 router = APIRouter()
@@ -22,9 +21,10 @@ def dashboard_page(request: Request):
         request,
         "dashboard.html",
         {
-            "jira_base_url": JIRA_BASE_URL   # ✅ PASS TO UI
+            "jira_base_url": JIRA_BASE_URL
         }
     )
+
 
 @router.get("/mappings", response_class=HTMLResponse)
 def mappings_page(request: Request):
@@ -33,9 +33,15 @@ def mappings_page(request: Request):
 
     return templates.TemplateResponse(request, "mappings.html", {})
 
-@router.get("/mappings")
-def mappings_page(request: Request):
+
+# ✅ NEW ROUTE
+@router.get("/templates", response_class=HTMLResponse)
+def templates_page(request: Request):
     if "user" not in request.session:
         return RedirectResponse("/login")
 
-    return templates.TemplateResponse(request, "mappings.html", {})
+    return templates.TemplateResponse(
+        request,
+        "templates.html",
+        {}
+    )
