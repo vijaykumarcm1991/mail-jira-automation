@@ -6,8 +6,9 @@
 
     <h2 class="text-xl font-semibold mb-4">Dashboard</h2>
 
-    <table class="min-w-full bg-white shadow rounded">
-        <thead>
+    <div class="bg-white shadow rounded overflow-auto max-h-96">
+    <table class="min-w-full">
+        <thead class="sticky top-0 bg-gray-200">
             <tr class="bg-gray-200 text-left">
                 <th class="p-2">Internal ID</th>
                 <th class="p-2">Summary</th>
@@ -21,14 +22,21 @@
                 <tr class="border-t">
                     <td class="p-2" x-text="t.internal_id"></td>
                     <td class="p-2" x-text="t.subject"></td>
-                    <td class="p-2" x-text="t.jira_id"></td>
+                    <td class="p-2">
+                        <a :href="jiraBaseUrl + '/browse/' + t.jira_id"
+                        target="_blank"
+                        class="text-blue-600 hover:underline"
+                        x-text="t.jira_id">
+                        </a>
+                    </td>
                     <td class="p-2" x-text="t.status"></td>
                 </tr>
             </template>
         </tbody>
     </table>
+    </div>
 
-    <div class="bg-white p-4 rounded shadow mt-6">
+    <div class="bg-white p-4 rounded shadow mt-6 max-h-96 overflow-auto">
 
         <h3 class="font-semibold mb-3">Rule Execution Logs</h3>
 
@@ -62,6 +70,7 @@ function dashboardApp() {
     return {
         tickets: [],
         logs: [],
+        jiraBaseUrl: "{{ jira_base_url }}",
 
         async init() {
             await this.loadTickets()
