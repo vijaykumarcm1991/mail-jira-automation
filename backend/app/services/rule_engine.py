@@ -39,7 +39,7 @@ def match_conditions(email_data, conditions):
 
 def apply_rules(email_data):
     rules = list(
-        rules_collection.find({"active": True}).sort("priority", 1)
+        rules_collection.find({"active": True}).sort("created_at", -1)
     )
 
     log_collection = db["rule_logs"]
@@ -59,7 +59,21 @@ def apply_rules(email_data):
 
             return rule.get("actions", {})
 
-    # no match case
+    # ✅ DEFAULT RULE FALLBACK
+    default_rule = rules_collection.find_one({"rule_name": "DEFAULT"})
+
+    if default_rule:
+        log_collection.insert_one({
+            "internal_id": email_data.get("internal_id"),
+            "rule_name": "DEFAULT",
+            "matched": True,
+            "actions": default_rule.get("actions", {}),
+            "timestamp": datetime.now(IST)
+        })
+
+        return default_rule.get("actions", {})
+
+    # fallback (if no default rule exists)
     log_collection.insert_one({
         "internal_id": email_data.get("internal_id"),
         "rule_name": None,
