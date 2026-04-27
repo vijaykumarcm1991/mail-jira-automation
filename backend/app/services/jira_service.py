@@ -8,6 +8,9 @@ from app.config.settings import (
     JIRA_PROJECT_KEY,      # ✅ ADD THIS
     JIRA_ISSUE_TYPE        # ✅ ADD THIS
 )
+from app.db.mongo import failed_jobs_collection
+from datetime import datetime
+
 
 def create_jira_ticket(data, rule_actions):
     url = f"{JIRA_BASE_URL}/rest/api/3/issue"
@@ -45,7 +48,10 @@ def create_jira_ticket(data, rule_actions):
         },
 
         # ✅ FIXED SOURCE (your requirement)
-        "customfield_10095": {"value": "EMAIL"}
+        "customfield_10095": {"value": "EMAIL"},
+
+        # ✅ NEW FIELD (Infra_App)
+        "customfield_10099": {"value": "App"}
     }
 
     # ✅ Step 2: Apply rule-based fields
@@ -91,6 +97,20 @@ def create_jira_ticket(data, rule_actions):
         return response.json().get("key")
     else:
         print("Jira Error:", response.text)
+
+        # ✅ STORE FAILED JOB
+        failed_jobs_collection.insert_one({
+            "type": "jira",
+            "payload": {
+                "data": data,
+                "rule_actions": rule_actions
+            },
+            "retry_count": 0,
+            "status": "pending",
+            "error": response.text,
+            "created_at": datetime.utcnow()
+        })
+
         return None
     
 def get_latest_comment(issue_key):

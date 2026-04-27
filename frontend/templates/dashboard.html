@@ -63,6 +63,32 @@
 
     </div>
 
+    <div class="bg-white p-4 rounded shadow mt-6 max-h-96 overflow-auto">
+
+        <h3 class="font-semibold mb-3">Failed Jobs</h3>
+
+        <template x-for="job in failedJobs" :key="job._id">
+            <div class="border p-2 mb-2 rounded text-sm">
+
+                <div>
+                    <strong x-text="job.type"></strong>
+                    →
+                    Retry: <span x-text="job.retry_count"></span>
+                </div>
+
+                <div class="text-red-500" x-text="job.error"></div>
+
+                <button
+                    @click="retryJob(job._id)"
+                    class="bg-blue-600 text-white px-2 py-1 mt-2 rounded text-xs">
+                    Retry
+                </button>
+
+            </div>
+        </template>
+
+    </div>
+
 </div>
 
 <script>
@@ -70,16 +96,19 @@ function dashboardApp() {
     return {
         tickets: [],
         logs: [],
+        failedJobs: [],
         jiraBaseUrl: "{{ jira_base_url }}",
 
         async init() {
             await this.loadTickets()
             await this.loadLogs()
+            await this.loadFailedJobs()
 
             // ✅ Auto refresh every 10 seconds
             setInterval(() => {
                 this.loadTickets()
                 this.loadLogs()
+                this.loadFailedJobs()
             }, 10000)
         },
 
@@ -91,6 +120,16 @@ function dashboardApp() {
         async loadLogs() {
             const res = await fetch('/api/rule-logs')
             this.logs = await res.json()
+        },
+
+        async loadFailedJobs() {
+            const res = await fetch('/api/failed-jobs')
+            this.failedJobs = await res.json()
+        },
+
+        async retryJob(id) {
+            await fetch(`/api/retry-job/${id}`, { method: 'POST' })
+            await this.loadFailedJobs()
         }
     }
 }

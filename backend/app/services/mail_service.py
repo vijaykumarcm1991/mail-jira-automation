@@ -21,6 +21,7 @@ from app.db.mongo import db
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email import encoders
+from app.db.mongo import failed_jobs_collection
 
 IST = pytz.timezone(TIMEZONE)
 
@@ -142,6 +143,25 @@ def send_email(to_list, subject, body, cc_list=None, attachments=None):
             part.add_header("Content-Disposition", f"attachment; filename={filename}")
             msg.attach(part)
 
-    with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT) as server:
-        server.login(SMTP_USER, SMTP_PASS)
-        server.sendmail(EMAIL_ACCOUNT, recipients, msg.as_string())
+    try:
+        with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT) as server:
+            server.login(SMTP_USER, SMTP_PASS)
+            server.sendmail(EMAIL_ACCOUNT, recipients, msg.as_string())
+
+    except Exception as e:
+        print("Email Error:", str(e))
+
+        # ✅ STORE FAILED EMAIL
+        failed_jobs_collection.insert_one({
+            "type": "email",
+            "payload": {
+                "to_list": to_list,
+                "cc_list": cc_list,
+                "subject": subject,
+                "body": body
+            },
+            "retry_count": 0,
+            "status": "pending",
+            "error": str(e),
+            "created_at": datetime.now(IST)
+        })

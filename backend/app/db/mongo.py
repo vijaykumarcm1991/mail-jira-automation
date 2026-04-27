@@ -8,6 +8,7 @@ db = client["mail_jira_db"]
 
 # Collections
 emails_collection = db["emails"]
+failed_jobs_collection = db["failed_jobs"]
 
 existing_indexes = emails_collection.index_information()
 emails_collection.create_index("internal_id", unique=True)
