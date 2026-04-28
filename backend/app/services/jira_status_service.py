@@ -26,30 +26,38 @@ def fetch_jira_status(issue_key):
 def sync_jira_status():
     print("Syncing Jira ticket statuses...")
 
-    tickets = emails_collection.find({
-        "jira_id": {"$ne": None}
-    })
+    tickets = emails_collection.aggregate([
+        {"$match": {"jira_id": {"$ne": None}}},
+        {
+            "$group": {
+                "_id": "$jira_id",
+                "doc": {"$first": "$$ROOT"}
+            }
+        }
+    ])
 
-    for ticket in tickets:
+    for item in tickets:
+        ticket = item["doc"]
+
         jira_id = ticket.get("jira_id")
 
         if not jira_id:
             continue
 
         latest_status = fetch_jira_status(jira_id)
-
         old_status = ticket.get("status")
 
         if latest_status and latest_status != old_status:
 
-            # ✅ 1. Update DB
             emails_collection.update_one(
                 {"internal_id": ticket["internal_id"]},
                 {"$set": {"status": latest_status}}
             )
 
-            # ✅ 2. SEND EMAIL ONLY IF RESOLVED
-            if latest_status.lower() == "resolved":
+            if (
+                latest_status.lower() == "resolved"
+                and not ticket.get("resolved_email_sent")
+            ):
 
                 template = db["email_templates"].find_one({"type": "resolved"})
 
@@ -65,9 +73,16 @@ def sync_jira_status():
                 send_email(
                     to_list=[ticket.get("from")],
                     cc_list=ticket.get("cc", []),
-                    subject=template["subject"].replace("{{jira_id}}", jira_id),
+                    subject=f"Re: {ticket.get('subject')}",
                     body=body,
-                    attachments=attachments
+                    attachments=attachments,
+                    message_id=ticket.get("message_id")
+                )
+
+                # ✅ mark email sent
+                emails_collection.update_one(
+                    {"_id": ticket["_id"]},
+                    {"$set": {"resolved_email_sent": True}}
                 )
 
     print("Jira status sync completed.")

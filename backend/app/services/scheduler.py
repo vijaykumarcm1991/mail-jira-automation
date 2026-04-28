@@ -24,7 +24,7 @@ def start_mail_listener():
         except Exception as e:
             print("Error:", e)
 
-        time.sleep(60) # Check every minute
+        time.sleep(15) # Check every 15 seconds
 
 def start_background_thread():
     thread = threading.Thread(target=start_mail_listener, daemon=True)

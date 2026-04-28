@@ -148,3 +148,36 @@ def get_attachments(issue_key):
             files.append((att["filename"], file_resp.content))
 
     return files
+
+def add_comment_to_jira(issue_key, comment):
+    url = f"{JIRA_BASE_URL}/rest/api/3/issue/{issue_key}/comment"
+
+    auth = (JIRA_EMAIL, JIRA_API_TOKEN)
+
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/json"
+    }
+
+    payload = {
+        "body": {
+            "type": "doc",
+            "version": 1,
+            "content": [
+                {
+                    "type": "paragraph",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": comment
+                        }
+                    ]
+                }
+            ]
+        }
+    }
+
+    response = requests.post(url, json=payload, headers=headers, auth=auth)
+
+    if response.status_code != 201:
+        print("Failed to add comment:", response.text)
