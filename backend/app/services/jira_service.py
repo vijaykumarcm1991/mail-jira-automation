@@ -10,7 +10,8 @@ from app.config.settings import (
 )
 from app.db.mongo import failed_jobs_collection
 from datetime import datetime
-
+import re
+from app.config.settings import JIRA_ONPREM_URL, JIRA_ONPREM_USER, JIRA_ONPREM_PASS
 
 def create_jira_ticket(data, rule_actions):
     url = f"{JIRA_BASE_URL}/rest/api/3/issue"
@@ -181,3 +182,74 @@ def add_comment_to_jira(issue_key, comment):
 
     if response.status_code != 201:
         print("Failed to add comment:", response.text)
+
+def get_l3_ticket_from_jsm(issue_key):
+    url = f"{JIRA_BASE_URL}/rest/api/3/issue/{issue_key}"
+
+    auth = (JIRA_EMAIL, JIRA_API_TOKEN)
+    response = requests.get(url, auth=auth)
+
+    if response.status_code != 200:
+        return None
+
+    # ✅ ONLY USE REMOTE LINKS (CORRECT)
+    url = f"{JIRA_BASE_URL}/rest/api/3/issue/{issue_key}/remotelink"
+    response = requests.get(url, auth=auth)
+
+    if response.status_code != 200:
+        return None
+
+    links = response.json()
+
+    for link in links:
+        url = link.get("object", {}).get("url", "")
+        match = re.search(r'[A-Z]+-\d+', url)
+        if match:
+            return match.group(0)
+
+    return None
+
+def fetch_l3_status(issue_key):
+
+    url = f"{JIRA_ONPREM_URL}/rest/api/2/issue/{issue_key}"
+
+    response = requests.get(url, auth=(JIRA_ONPREM_USER, JIRA_ONPREM_PASS))
+
+    if response.status_code != 200:
+        return None
+
+    return response.json()["fields"]["status"]["name"]
+
+def get_l3_comment(issue_key):
+
+    url = f"{JIRA_ONPREM_URL}/rest/api/2/issue/{issue_key}/comment"
+
+    response = requests.get(url, auth=(JIRA_ONPREM_USER, JIRA_ONPREM_PASS))
+
+    if response.status_code != 200:
+        return ""
+
+    comments = response.json().get("comments", [])
+    if not comments:
+        return ""
+
+    return comments[-1].get("body", "")
+
+def get_l3_attachments(issue_key):
+
+    url = f"{JIRA_ONPREM_URL}/rest/api/2/issue/{issue_key}"
+
+    response = requests.get(url, auth=(JIRA_ONPREM_USER, JIRA_ONPREM_PASS))
+
+    if response.status_code != 200:
+        return []
+
+    attachments = response.json()["fields"].get("attachment", [])
+
+    files = []
+    for att in attachments:
+        file_resp = requests.get(att["content"], auth=(JIRA_ONPREM_USER, JIRA_ONPREM_PASS))
+        if file_resp.status_code == 200:
+            files.append((att["filename"], file_resp.content))
+
+    return files

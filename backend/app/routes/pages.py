@@ -2,6 +2,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from app.config.settings import JIRA_BASE_URL
+from app.config.settings import JIRA_ONPREM_URL 
 
 router = APIRouter()
 templates = Jinja2Templates(directory="/frontend/templates")
@@ -21,7 +22,8 @@ def dashboard_page(request: Request):
         request,
         "dashboard.html",
         {
-            "jira_base_url": JIRA_BASE_URL
+            "jira_base_url": JIRA_BASE_URL,
+            "l3_jira_base_url": JIRA_ONPREM_URL
         }
     )
 

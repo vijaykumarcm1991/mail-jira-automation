@@ -30,4 +30,9 @@ SMTP_PORT = int(os.getenv("SMTP_PORT", 465))
 SMTP_USER = os.getenv("SMTP_USER")
 SMTP_PASS = os.getenv("SMTP_PASS")
 
+# 🔹 JIRA ON-PREM CONFIG
+JIRA_ONPREM_URL = os.getenv("JIRA_ONPREM_URL")
+JIRA_ONPREM_USER = os.getenv("JIRA_ONPREM_USER")
+JIRA_ONPREM_PASS = os.getenv("JIRA_ONPREM_PASS")
+
 # ❗ Source excluded (fixed as EMAIL)
