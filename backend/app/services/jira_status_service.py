@@ -55,6 +55,14 @@ def sync_jira_status():
                 {"$set": {"status": latest_status}}
             )
 
+            # 🔥 BLOCK if already resolved by L3
+            if ticket.get("resolution_source") == "L3":
+                continue
+
+            # ❗ SKIP JSM EMAIL IF L3 EXISTS
+            if ticket.get("l3_jira_id"):
+                continue
+
             if (
                 latest_status.lower() == "resolved"
                 and not ticket.get("resolved_email_sent")
@@ -83,7 +91,12 @@ def sync_jira_status():
                 # ✅ mark email sent
                 emails_collection.update_one(
                     {"_id": ticket["_id"]},
-                    {"$set": {"resolved_email_sent": True}}
+                    {
+                        "$set": {
+                            "resolved_email_sent": True,
+                            "resolution_source": "JSM"   # 🔥 NEW
+                        }
+                    }
                 )
 
         # ✅ GET L3 TICKET
@@ -106,6 +119,10 @@ def sync_jira_status():
                     {"$set": {"l3_status": l3_status}}
                 )
 
+                # 🔥 BLOCK if already resolved by JSM (rare but possible)
+                if ticket.get("resolution_source") == "JSM":
+                    continue
+
                 if (
                     l3_status.lower() == "resolved"
                     and not ticket.get("l3_resolved_email_sent")
@@ -115,11 +132,16 @@ def sync_jira_status():
                     attachments = get_l3_attachments(l3_jira_id)
 
                     template = db["email_templates"].find_one({"type": "resolved"})
+                    
+                    jsm_id = ticket.get("jira_id")
 
                     body = template["body"] \
-                        .replace("{{jira_id}}", l3_jira_id) \
+                        .replace("{{jira_id}}", jsm_id) \
                         .replace("{{status}}", l3_status) \
                         .replace("{{comment}}", latest_comment)
+                    
+                    # ✅ Append L3 info
+                    body += f"\n\nInternal Escalation Details:\nL3 Ticket ID: {l3_jira_id}"
 
                     send_email(
                         to_list=[ticket.get("from")],
@@ -132,7 +154,12 @@ def sync_jira_status():
 
                     emails_collection.update_one(
                         {"_id": ticket["_id"]},
-                        {"$set": {"l3_resolved_email_sent": True}}
+                        {
+                            "$set": {
+                                "l3_resolved_email_sent": True,
+                                "resolution_source": "L3"   # 🔥 NEW
+                            }
+                        }
                     )
 
     print("Jira status sync completed.")

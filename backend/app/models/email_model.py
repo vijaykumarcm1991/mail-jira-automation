@@ -16,5 +16,6 @@ def create_email_doc(data):
         "l3_jira_id": data.get("l3_jira_id"),
         "l3_status": data.get("l3_status"),
         "l3_resolved_email_sent": data.get("l3_resolved_email_sent", False),
+        "resolution_source": data.get("resolution_source"),
         "created_at": datetime.now(IST)
     }
