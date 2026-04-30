@@ -5,6 +5,7 @@ from app.services.mail_service import send_email
 from app.db.mongo import db
 from app.services.jira_service import get_latest_comment, get_attachments
 from app.services.jira_service import get_l3_ticket_from_jsm, fetch_l3_status, get_l3_comment, get_l3_attachments
+from jinja2 import Template
 
 def fetch_jira_status(issue_key):
     url = f"{JIRA_BASE_URL}/rest/api/3/issue/{issue_key}"
@@ -77,12 +78,20 @@ def sync_jira_status():
 
                 template = db["email_templates"].find_one({"type": "resolved"})
 
+                if not template:
+                    print("Resolved template not found")
+                    continue
+
                 latest_comment = get_latest_comment(jira_id)
 
-                body = template["body"] \
-                    .replace("{{jira_id}}", jira_id) \
-                    .replace("{{status}}", latest_status) \
-                    .replace("{{comment}}", latest_comment)
+                context = {
+                    "jira_id": jira_id,
+                    "status": latest_status,
+                    "comment": latest_comment,
+                    "l3_jira_id": ticket.get("l3_jira_id") or ""
+                }
+
+                body = Template(template["body"]).render(**context)
 
                 attachments = get_attachments(jira_id)
 
@@ -108,9 +117,12 @@ def sync_jira_status():
 
         # ✅ GET L3 TICKET
         l3_jira_id = ticket.get("l3_jira_id")
-        # 🔥 SKIP L3 IF CLOSED/CANCELLED
-        if ticket.get("l3_status", "").lower() in ["resolved", "cancelled", "canceled"]:
+        
+        l3_status_val = ticket.get("l3_status")
+
+        if l3_status_val and l3_status_val.lower() in ["resolved", "cancelled", "canceled"]:
             continue
+
         if not l3_jira_id:
             l3_jira_id = get_l3_ticket_from_jsm(jira_id)
 
@@ -134,7 +146,8 @@ def sync_jira_status():
                     continue
 
                 if (
-                    l3_status.lower() == "resolved"
+                    l3_status
+                    and l3_status.lower() == "resolved"
                     and not ticket.get("l3_resolved_email_sent")
                 ):
 
@@ -142,16 +155,21 @@ def sync_jira_status():
                     attachments = get_l3_attachments(l3_jira_id)
 
                     template = db["email_templates"].find_one({"type": "resolved"})
+
+                    if not template:
+                        print("Resolved template not found")
+                        continue
                     
                     jsm_id = ticket.get("jira_id")
 
-                    body = template["body"] \
-                        .replace("{{jira_id}}", jsm_id) \
-                        .replace("{{status}}", l3_status) \
-                        .replace("{{comment}}", latest_comment)
-                    
-                    # ✅ Append L3 info
-                    body += f"\n\nInternal Escalation Details:\nL3 Ticket ID: {l3_jira_id}"
+                    context = {
+                        "jira_id": jsm_id,
+                        "status": l3_status,
+                        "comment": latest_comment,
+                        "l3_jira_id": ticket.get("l3_jira_id") or ""
+                    }
+
+                    body = Template(template["body"]).render(**context)
 
                     send_email(
                         to_list=[ticket.get("from")],

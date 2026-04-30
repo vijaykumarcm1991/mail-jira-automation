@@ -11,9 +11,18 @@
 
             <h3 class="font-bold mb-2" x-text="t.type.toUpperCase()"></h3>
 
-            <input x-model="t.subject"
-                   class="border p-2 w-full mb-2"
-                   placeholder="Subject">
+            <!-- 🔥 SUBJECT REMOVED (AUTO GENERATED FROM USER EMAIL) -->
+            <div class="text-sm text-gray-500 mb-2">
+                Subject is automatically taken from user email (threading enabled)
+            </div>
+
+            <div class="text-xs text-gray-500 mb-2">
+                Available placeholders:
+                <code>{{'{{jira_id}}'}}</code>,
+                <code>{{'{{status}}'}}</code>,
+                <code>{{'{{comment}}'}}</code>,
+                <code>{{'{{l3_jira_id}}'}}</code>
+            </div>
 
             <textarea x-model="t.body"
                       class="border p-2 w-full h-32"

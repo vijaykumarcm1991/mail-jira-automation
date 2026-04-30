@@ -3,6 +3,7 @@ import email
 from email.header import decode_header
 from datetime import datetime
 import re
+from jinja2 import Template
 import pytz
 from app.services.jira_service import create_jira_ticket
 from app.db.mongo import emails_collection
@@ -23,7 +24,6 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email import encoders
 from app.db.mongo import failed_jobs_collection
-import re
 import uuid
 
 IST = pytz.timezone(TIMEZONE)
@@ -157,7 +157,11 @@ def fetch_unseen_emails():
             subject = f"Re: {base_subject}"
 
             template = db["email_templates"].find_one({"type": "create"})
-            body = template["body"].replace("{{jira_id}}", jira_id)
+            context = {
+                "jira_id": jira_id
+            }
+
+            body = Template(template["body"]).render(**context)
 
             sent_msg_id = send_email(
                 to_list=[from_email],
