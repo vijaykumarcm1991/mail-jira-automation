@@ -28,7 +28,14 @@ def sync_jira_status():
     print("Syncing Jira ticket statuses...")
 
     tickets = emails_collection.aggregate([
-        {"$match": {"jira_id": {"$ne": None}}},
+        {
+            "$match": {
+                "jira_id": {"$ne": None},
+                "status": {
+                    "$nin": ["Resolved", "Cancelled", "Canceled"]   # 🔥 NEW
+                }
+            }
+        },
         {
             "$group": {
                 "_id": "$jira_id",
@@ -101,6 +108,9 @@ def sync_jira_status():
 
         # ✅ GET L3 TICKET
         l3_jira_id = ticket.get("l3_jira_id")
+        # 🔥 SKIP L3 IF CLOSED/CANCELLED
+        if ticket.get("l3_status", "").lower() in ["resolved", "cancelled", "canceled"]:
+            continue
         if not l3_jira_id:
             l3_jira_id = get_l3_ticket_from_jsm(jira_id)
 
