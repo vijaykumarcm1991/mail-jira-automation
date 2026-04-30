@@ -13,7 +13,7 @@ from datetime import datetime
 import re
 from app.config.settings import JIRA_ONPREM_URL, JIRA_ONPREM_USER, JIRA_ONPREM_PASS
 
-def create_jira_ticket(data, rule_actions):
+def create_jira_ticket(data, rule_actions, attachments=None):
     url = f"{JIRA_BASE_URL}/rest/api/3/issue"
 
     auth = (JIRA_EMAIL, JIRA_API_TOKEN)
@@ -95,7 +95,13 @@ def create_jira_ticket(data, rule_actions):
     response = requests.post(url, json=payload, headers=headers, auth=auth)
 
     if response.status_code == 201:
-        return response.json().get("key")
+        issue_key = response.json().get("key")
+
+        # 🔥 UPLOAD ATTACHMENTS
+        if attachments:
+            upload_attachments(issue_key, attachments)
+
+        return issue_key
     else:
         print("Jira Error:", response.text)
 
@@ -131,7 +137,7 @@ def get_latest_comment(issue_key):
     return latest.get("body", {}).get("content", [{}])[0].get("content", [{}])[0].get("text", "")
 
 
-def get_attachments(issue_key):
+def get_attachments(issue_key, skip_files=None):
     url = f"{JIRA_BASE_URL}/rest/api/3/issue/{issue_key}"
 
     auth = (JIRA_EMAIL, JIRA_API_TOKEN)
@@ -144,11 +150,18 @@ def get_attachments(issue_key):
 
     files = []
     for att in attachments:
+        filename = att["filename"]
+
+        # 🔥 SKIP EMAIL FILES
+        if skip_files and filename in skip_files:
+            continue
+
         file_resp = requests.get(att["content"], auth=auth)
         if file_resp.status_code == 200:
-            files.append((att["filename"], file_resp.content))
+            files.append((filename, file_resp.content))
 
     return files
+
 
 def add_comment_to_jira(issue_key, comment):
     url = f"{JIRA_BASE_URL}/rest/api/3/issue/{issue_key}/comment"
@@ -253,3 +266,29 @@ def get_l3_attachments(issue_key):
             files.append((att["filename"], file_resp.content))
 
     return files
+
+def upload_attachments(issue_key, attachments):
+    url = f"{JIRA_BASE_URL}/rest/api/3/issue/{issue_key}/attachments"
+
+    auth = (JIRA_EMAIL, JIRA_API_TOKEN)
+
+    headers = {
+        "X-Atlassian-Token": "no-check"
+    }
+
+    files = []
+    for filename, content in attachments:
+        files.append((
+            "file",
+            (
+                filename,
+                content,
+                "application/octet-stream",
+                {"X-Source": "email"}  # 🔥 TAG
+            )
+        ))
+
+    response = requests.post(url, headers=headers, files=files, auth=auth)
+
+    if response.status_code not in [200, 201]:
+        print(f"Attachment upload failed for {issue_key}:", response.text)

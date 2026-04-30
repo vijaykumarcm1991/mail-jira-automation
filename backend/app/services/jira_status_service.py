@@ -93,7 +93,10 @@ def sync_jira_status():
 
                 body = Template(template["body"]).render(**context)
 
-                attachments = get_attachments(jira_id)
+                attachments = get_attachments(
+                    jira_id,
+                    skip_files=ticket.get("email_attachments", [])
+                )
 
                 send_email(
                     to_list=[ticket.get("from")],

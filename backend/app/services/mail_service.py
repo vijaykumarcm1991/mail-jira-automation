@@ -77,12 +77,23 @@ def fetch_unseen_emails():
         cc = msg.get("Cc")
 
         body = ""
+        attachments = []  # 🔥 NEW
 
         if msg.is_multipart():
             for part in msg.walk():
-                if part.get_content_type() == "text/plain":
+                content_type = part.get_content_type()
+                content_disposition = str(part.get("Content-Disposition"))
+
+                # ✅ BODY
+                if content_type == "text/plain" and "attachment" not in content_disposition:
                     body = part.get_payload(decode=True).decode()
-                    break
+
+                # ✅ ATTACHMENTS
+                if "attachment" in content_disposition:
+                    filename = part.get_filename()
+                    if filename:
+                        file_data = part.get_payload(decode=True)
+                        attachments.append((filename, file_data))
         else:
             body = msg.get_payload(decode=True).decode()
 
@@ -95,6 +106,7 @@ def fetch_unseen_emails():
             "status": "New",
             "description": clean_text(body),
             "message_id": message_id,
+            "email_attachments": [name for name, _ in attachments],  # 🔥 NEW
             "created_at": datetime.now(IST)
         }
 
@@ -150,7 +162,7 @@ def fetch_unseen_emails():
         rule_actions = apply_rules(data)
 
         # ✅ Pass to Jira
-        jira_id = create_jira_ticket(data, rule_actions)
+        jira_id = create_jira_ticket(data, rule_actions, attachments)
 
         if jira_id:
             base_subject = re.sub(r'^(re:\s*)+', '', data.get("subject"), flags=re.IGNORECASE)
