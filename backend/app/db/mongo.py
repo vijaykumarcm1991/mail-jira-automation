@@ -10,6 +10,7 @@ db = client["mail_jira_db"]
 emails_collection = db["emails"]
 failed_jobs_collection = db["failed_jobs"]
 users_collection = db["users"]
+audit_logs_collection = db["audit_logs"]
 
 existing_indexes = emails_collection.index_information()
 emails_collection.create_index("internal_id", unique=True)
@@ -21,3 +22,6 @@ if "message_id_1" not in existing_indexes:
     )
 
 users_collection.create_index("username", unique=True)
+audit_logs_collection.create_index("timestamp")
+audit_logs_collection.create_index("actor")
+audit_logs_collection.create_index("action")

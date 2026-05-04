@@ -2,6 +2,7 @@ from fastapi import APIRouter, Request
 from app.db.mongo import failed_jobs_collection
 from bson import ObjectId
 from app.services.auth_service import require_admin
+from app.services.audit_service import log_audit
 
 router = APIRouter()
 
@@ -23,7 +24,7 @@ def get_failed_jobs():
 # ✅ Manual retry API
 @router.post("/api/retry-job/{job_id}")
 def retry_job(job_id: str, request: Request):
-    require_admin(request)
+    actor = require_admin(request)
 
     job = failed_jobs_collection.find_one({"_id": ObjectId(job_id)})
 
@@ -35,4 +36,12 @@ def retry_job(job_id: str, request: Request):
         {"$set": {"status": "pending"}}
     )
 
+    log_audit(
+        request,
+        "retry",
+        "failed_job",
+        job_id,
+        {"job_type": job.get("type"), "previous_status": job.get("status")},
+        actor,
+    )
     return {"message": "Retry triggered"}

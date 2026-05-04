@@ -10,6 +10,7 @@ from app.routes import rules
 from app.routes import rule_logs
 from app.routes import templates
 from app.routes import failed_jobs
+from app.routes import audit
 from app.services.auth_service import ensure_default_admin
 
 app = FastAPI()
@@ -27,6 +28,7 @@ app.include_router(rules.router)
 app.include_router(rule_logs.router)
 app.include_router(templates.router)
 app.include_router(failed_jobs.router)
+app.include_router(audit.router)
 
 # Mount static files
 app.mount("/static", StaticFiles(directory="/frontend/static"), name="static")

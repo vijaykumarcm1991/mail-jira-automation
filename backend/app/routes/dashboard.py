@@ -3,6 +3,7 @@ from app.db.mongo import emails_collection
 from app.utils.helpers import generate_internal_id
 from app.models.email_model import create_email_doc
 from app.services.auth_service import require_admin
+from app.services.audit_service import log_audit
 
 router = APIRouter()
 
@@ -16,7 +17,7 @@ def get_tickets():
 
 @router.post("/api/tickets")
 def create_ticket(request: Request):
-    require_admin(request)
+    actor = require_admin(request)
     internal_id = generate_internal_id()
 
     data = {
@@ -30,4 +31,12 @@ def create_ticket(request: Request):
     doc = create_email_doc(data)
     emails_collection.insert_one(doc)
 
+    log_audit(
+        request,
+        "create",
+        "ticket",
+        internal_id,
+        {"jira_id": data["jira_id"], "source": "manual_api"},
+        actor,
+    )
     return {"message": "Ticket created", "internal_id": internal_id}

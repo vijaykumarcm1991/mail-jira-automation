@@ -3,5 +3,8 @@ build_start.sh
 git_commit_push.sh
 .dockerignore
 __pycache__/
+**/__pycache__/
+*.py[cod]
+*$py.class
 AGENTS.md
 README.md

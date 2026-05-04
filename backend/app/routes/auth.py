@@ -7,6 +7,7 @@ from pymongo.errors import DuplicateKeyError
 
 from app.config.settings import AUTH_COOKIE_NAME, TIMEZONE
 from app.db.mongo import users_collection
+from app.services.audit_service import log_audit
 from app.services.auth_service import (
     create_token,
     get_user_from_request,
@@ -30,10 +31,18 @@ def _serialize_user(user):
 
 
 @router.post("/login")
-def login(username: str = Form(...), password: str = Form(...)):
+def login(request: Request, username: str = Form(...), password: str = Form(...)):
     user = users_collection.find_one({"username": username, "active": True})
 
     if not user or not verify_password(password, user.get("password_hash", "")):
+        log_audit(
+            request,
+            "login_failed",
+            "auth",
+            clean_username(username),
+            {"reason": "invalid_credentials"},
+            {"username": clean_username(username), "role": "unknown"},
+        )
         return RedirectResponse("/login?error=1", status_code=302)
 
     response = RedirectResponse("/dashboard", status_code=302)
@@ -43,13 +52,23 @@ def login(username: str = Form(...), password: str = Form(...)):
         httponly=True,
         samesite="lax",
     )
+    log_audit(
+        request,
+        "login",
+        "auth",
+        user["username"],
+        {"role": user.get("role", "public")},
+        {"username": user["username"], "role": user.get("role", "public")},
+    )
     return response
 
 
 @router.get("/logout")
-def logout():
+def logout(request: Request):
+    user = get_user_from_request(request)
     response = RedirectResponse("/dashboard", status_code=302)
     response.delete_cookie(AUTH_COOKIE_NAME)
+    log_audit(request, "logout", "auth", user.get("username"), actor=user)
     return response
 
 
@@ -69,7 +88,7 @@ def list_users(request: Request):
 
 @router.post("/api/admin-users")
 def create_user(request: Request, data: dict):
-    require_admin(request)
+    actor = require_admin(request)
 
     username = clean_username(data.get("username"))
     password = data.get("password", "")
@@ -93,6 +112,14 @@ def create_user(request: Request, data: dict):
     except DuplicateKeyError:
         raise HTTPException(status_code=409, detail="Username already exists")
 
+    log_audit(
+        request,
+        "create",
+        "admin_user",
+        username,
+        {"role": role, "active": bool(data.get("active", True))},
+        actor,
+    )
     return {"message": "User created"}
 
 
@@ -118,6 +145,18 @@ def update_user(username: str, request: Request, data: dict):
         update["password_hash"] = hash_password(data["password"])
 
     users_collection.update_one({"username": username}, {"$set": update})
+    log_audit(
+        request,
+        "update",
+        "admin_user",
+        username,
+        {
+            "role": update["role"],
+            "active": update["active"],
+            "password_changed": bool(data.get("password")),
+        },
+        current,
+    )
     return {"message": "User updated"}
 
 
@@ -130,6 +169,7 @@ def delete_user(username: str, request: Request):
         raise HTTPException(status_code=400, detail="You cannot delete your own user")
 
     users_collection.delete_one({"username": username})
+    log_audit(request, "delete", "admin_user", username, actor=current)
     return {"message": "User deleted"}
 
 

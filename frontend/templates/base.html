@@ -22,6 +22,7 @@
                 <a href="/templates" class="hover:underline">Templates</a>
                 {% if is_admin %}
                 <a href="/admin-users" class="hover:underline">Admin Users</a>
+                <a href="/audit" class="hover:underline">Audit</a>
                 {% endif %}
                 {% if is_authenticated %}
                 <span class="text-blue-100">{{ current_user.username }} ({{ current_user.role }})</span>

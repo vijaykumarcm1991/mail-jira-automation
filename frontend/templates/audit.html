@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div x-data="auditApp()" x-init="init()" class="max-w-6xl mx-auto">
+
+    <div class="flex justify-between items-center mb-4">
+        <h2 class="text-xl font-semibold">Audit Log</h2>
+        <button @click="loadLogs"
+                class="bg-blue-600 text-white px-3 py-1 rounded text-sm">
+            Refresh
+        </button>
+    </div>
+
+    <div class="bg-white shadow rounded overflow-auto max-h-[32rem]">
+        <table class="min-w-full text-sm">
+            <thead class="sticky top-0 bg-gray-200">
+                <tr class="text-left">
+                    <th class="p-2">Time</th>
+                    <th class="p-2">Actor</th>
+                    <th class="p-2">Action</th>
+                    <th class="p-2">Resource</th>
+                    <th class="p-2">Target</th>
+                    <th class="p-2">Details</th>
+                    <th class="p-2">IP</th>
+                </tr>
+            </thead>
+            <tbody>
+                <template x-for="log in logs" :key="log._id">
+                    <tr class="border-t align-top">
+                        <td class="p-2 whitespace-nowrap" x-text="formatDate(log.timestamp)"></td>
+                        <td class="p-2">
+                            <div class="font-semibold" x-text="log.actor"></div>
+                            <div class="text-xs text-gray-500" x-text="log.role"></div>
+                        </td>
+                        <td class="p-2" x-text="log.action"></td>
+                        <td class="p-2" x-text="log.resource"></td>
+                        <td class="p-2" x-text="log.resource_id || '-'"></td>
+                        <td class="p-2">
+                            <code class="text-xs whitespace-pre-wrap" x-text="JSON.stringify(log.details || {})"></code>
+                        </td>
+                        <td class="p-2" x-text="log.client_ip || '-'"></td>
+                    </tr>
+                </template>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="text-sm text-gray-500 mt-3">
+        Showing the latest 100 audit records.
+    </div>
+
+</div>
+
+<script>
+function auditApp() {
+    return {
+        logs: [],
+
+        async init() {
+            await this.loadLogs()
+        },
+
+        async loadLogs() {
+            const res = await fetch('/api/audit-logs?limit=100')
+            this.logs = await res.json()
+        },
+
+        formatDate(value) {
+            if (!value) return "-"
+            return new Date(value).toLocaleString()
+        }
+    }
+}
+</script>
+
+{% endblock %}
