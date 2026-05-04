@@ -4,7 +4,10 @@
 
 <div x-data="dashboardApp()" x-init="init()">
 
-    <h2 class="text-xl font-semibold mb-4">Dashboard</h2>
+    <div class="flex justify-between items-center mb-4">
+        <h2 class="text-xl font-semibold">Dashboard</h2>
+        <span class="text-sm text-gray-500" x-show="!isAdmin">Read-only public view</span>
+    </div>
 
     <div class="bg-white shadow rounded overflow-auto max-h-96">
     <table class="min-w-full">
@@ -96,6 +99,7 @@
                 <div class="text-red-500" x-text="job.error"></div>
 
                 <button
+                    x-show="isAdmin"
                     @click="retryJob(job._id)"
                     class="bg-blue-600 text-white px-2 py-1 mt-2 rounded text-xs">
                     Retry
@@ -114,6 +118,7 @@ function dashboardApp() {
         tickets: [],
         logs: [],
         failedJobs: [],
+        isAdmin: {{ "true" if is_admin else "false" }},
         jiraBaseUrl: "{{ jira_base_url }}",
         l3BaseUrl: "{{ l3_jira_base_url }}",
         async init() {
@@ -145,6 +150,7 @@ function dashboardApp() {
         },
 
         async retryJob(id) {
+            if (!this.isAdmin) return
             await fetch(`/api/retry-job/${id}`, { method: 'POST' })
             await this.loadFailedJobs()
         }

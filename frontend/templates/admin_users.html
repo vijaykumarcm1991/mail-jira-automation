@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div x-data="adminUsersApp()" x-init="loadUsers()" class="max-w-5xl mx-auto">
+
+    <h2 class="text-xl font-semibold mb-4">Admin Users</h2>
+
+    <div class="bg-white p-5 rounded shadow mb-6">
+        <h3 class="font-semibold text-lg mb-3">Create User</h3>
+
+        <div class="grid grid-cols-4 gap-3">
+            <input x-model="form.username"
+                   placeholder="Username"
+                   class="border p-2">
+
+            <input x-model="form.password"
+                   type="password"
+                   placeholder="Password"
+                   class="border p-2">
+
+            <select x-model="form.role" class="border p-2">
+                <option value="admin">Admin</option>
+                <option value="public">Public</option>
+            </select>
+
+            <label class="flex items-center gap-2">
+                <input type="checkbox" x-model="form.active">
+                <span>Active</span>
+            </label>
+        </div>
+
+        <button @click="createUser"
+                class="bg-green-600 text-white px-4 py-2 rounded mt-4">
+            Save User
+        </button>
+
+        <div class="text-red-600 text-sm mt-3" x-text="error"></div>
+    </div>
+
+    <div class="bg-white p-4 rounded shadow">
+        <h3 class="font-semibold mb-3">Existing Users</h3>
+
+        <template x-for="u in users" :key="u.username">
+            <div class="border p-3 mb-3 rounded">
+                <div class="grid grid-cols-5 gap-3 items-center">
+                    <div>
+                        <div class="font-semibold" x-text="u.username"></div>
+                        <div class="text-xs text-gray-500" x-text="u.active ? 'Active' : 'Disabled'"></div>
+                    </div>
+
+                    <select x-model="u.role" class="border p-2">
+                        <option value="admin">Admin</option>
+                        <option value="public">Public</option>
+                    </select>
+
+                    <input x-model="u.password"
+                           type="password"
+                           placeholder="New password"
+                           class="border p-2">
+
+                    <label class="flex items-center gap-2">
+                        <input type="checkbox" x-model="u.active">
+                        <span>Active</span>
+                    </label>
+
+                    <div class="flex gap-2 justify-end">
+                        <button @click="updateUser(u)"
+                                class="text-blue-600 text-sm">Update</button>
+                        <button @click="deleteUser(u.username)"
+                                class="text-red-600 text-sm">Delete</button>
+                    </div>
+                </div>
+            </div>
+        </template>
+    </div>
+
+</div>
+
+<script>
+function adminUsersApp() {
+    return {
+        users: [],
+        error: "",
+        form: {
+            username: "",
+            password: "",
+            role: "admin",
+            active: true
+        },
+
+        async loadUsers() {
+            const res = await fetch('/api/admin-users')
+            this.users = await res.json()
+            this.users.forEach(u => u.password = "")
+        },
+
+        async createUser() {
+            this.error = ""
+            const res = await fetch('/api/admin-users', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(this.form)
+            })
+
+            if (!res.ok) {
+                const data = await res.json()
+                this.error = data.detail || "Unable to create user"
+                return
+            }
+
+            this.form = {username: "", password: "", role: "admin", active: true}
+            await this.loadUsers()
+        },
+
+        async updateUser(user) {
+            this.error = ""
+            const payload = {
+                role: user.role,
+                active: user.active,
+                password: user.password
+            }
+
+            const res = await fetch(`/api/admin-users/${user.username}`, {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload)
+            })
+
+            if (!res.ok) {
+                const data = await res.json()
+                this.error = data.detail || "Unable to update user"
+                return
+            }
+
+            await this.loadUsers()
+        },
+
+        async deleteUser(username) {
+            this.error = ""
+            const res = await fetch(`/api/admin-users/${username}`, {method: 'DELETE'})
+
+            if (!res.ok) {
+                const data = await res.json()
+                this.error = data.detail || "Unable to delete user"
+                return
+            }
+
+            await this.loadUsers()
+        }
+    }
+}
+</script>
+
+{% endblock %}

@@ -4,8 +4,14 @@
 
 <div x-data="ruleApp()" x-init="init()" class="max-w-5xl mx-auto">
 
-    <h2 class="text-xl font-semibold mb-4">Rule Engine</h2>
+    <div class="flex justify-between items-center mb-4">
+        <h2 class="text-xl font-semibold">Rule Engine</h2>
+        {% if not is_admin %}
+        <span class="text-sm text-gray-500">Read-only public view</span>
+        {% endif %}
+    </div>
 
+    {% if is_admin %}
     <!-- New Rule Form -->
     <div class="bg-white p-5 rounded shadow mb-6">
 
@@ -135,6 +141,11 @@
         </div>
 
     </div>
+    {% else %}
+    <div class="bg-white p-4 rounded shadow mb-6 text-sm text-gray-600">
+        Login as an admin to create, edit, or delete rules.
+    </div>
+    {% endif %}
 
     <!-- Existing Rules -->
     <div class="bg-white p-4 rounded shadow">
@@ -153,6 +164,7 @@
                         </div>
                     </div>
 
+                    {% if is_admin %}
                     <div class="flex gap-2">
                         <button @click="editRule(r)"
                                 class="text-blue-600 text-sm">Edit</button>
@@ -160,6 +172,7 @@
                         <button @click="deleteRule(r.rule_name)"
                                 class="text-red-600 text-sm">Delete</button>
                     </div>
+                    {% endif %}
                 </div>
 
                 <div class="text-sm mt-2">
@@ -192,6 +205,7 @@ function ruleApp() {
         rules: [],
         options: {},
         isEdit: false,
+        isAdmin: {{ "true" if is_admin else "false" }},
         rule: {
             rule_name: "",
             conditions: {
@@ -230,6 +244,7 @@ function ruleApp() {
         },
 
         async saveRule() {
+            if (!this.isAdmin) return
             await fetch('/api/rules', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
@@ -243,6 +258,7 @@ function ruleApp() {
         },
 
         async deleteRule(name) {
+            if (!this.isAdmin) return
             await fetch(`/api/rules/${name}`, { method: 'DELETE' })
             await this.loadRules()
         },
@@ -253,6 +269,7 @@ function ruleApp() {
         },
 
         editRule(r) {
+            if (!this.isAdmin) return
             this.rule = JSON.parse(JSON.stringify(r))
             this.isEdit = true
         },

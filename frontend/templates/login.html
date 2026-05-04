@@ -5,6 +5,13 @@
 <div class="max-w-md mx-auto bg-white p-6 rounded shadow">
 
     <h2 class="text-xl font-bold mb-4">Login</h2>
+    <p class="text-sm text-gray-500 mb-4">Public users can browse pages without logging in. Admin login unlocks write access.</p>
+
+    {% if request.query_params.get("error") %}
+    <div class="bg-red-50 text-red-700 border border-red-200 p-2 rounded mb-4 text-sm">
+        Invalid username or password.
+    </div>
+    {% endif %}
 
     <form method="post" action="/login" class="space-y-4">
         

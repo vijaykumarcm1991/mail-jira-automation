@@ -3,3 +3,5 @@ build_start.sh
 git_commit_push.sh
 .dockerignore
 __pycache__/
+AGENTS.md
+README.md

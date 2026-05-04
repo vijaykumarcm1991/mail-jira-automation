@@ -4,7 +4,10 @@
 
 <div x-data="templateApp()" x-init="loadTemplates()">
 
-    <h2 class="text-xl font-semibold mb-4">Email Templates</h2>
+    <div class="flex justify-between items-center mb-4">
+        <h2 class="text-xl font-semibold">Email Templates</h2>
+        <span class="text-sm text-gray-500" x-show="!isAdmin">Read-only public view</span>
+    </div>
 
     <template x-for="t in templates">
         <div class="bg-white p-4 mb-4 rounded shadow">
@@ -25,10 +28,12 @@
             </div>
 
             <textarea x-model="t.body"
+                      :disabled="!isAdmin"
                       class="border p-2 w-full h-32"
                       placeholder="Body"></textarea>
 
             <button @click="saveTemplate(t)"
+                    x-show="isAdmin"
                     class="bg-blue-600 text-white px-3 py-1 mt-2 rounded">
                 Save
             </button>
@@ -42,6 +47,7 @@
 function templateApp() {
     return {
         templates: [],
+        isAdmin: {{ "true" if is_admin else "false" }},
 
         async loadTemplates() {
             const res = await fetch('/api/templates')
@@ -49,6 +55,7 @@ function templateApp() {
         },
 
         async saveTemplate(t) {
+            if (!this.isAdmin) return
             await fetch('/api/templates', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},

@@ -1,6 +1,7 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from app.db.mongo import failed_jobs_collection
 from bson import ObjectId
+from app.services.auth_service import require_admin
 
 router = APIRouter()
 
@@ -21,7 +22,8 @@ def get_failed_jobs():
 
 # ✅ Manual retry API
 @router.post("/api/retry-job/{job_id}")
-def retry_job(job_id: str):
+def retry_job(job_id: str, request: Request):
+    require_admin(request)
 
     job = failed_jobs_collection.find_one({"_id": ObjectId(job_id)})
 

@@ -1,4 +1,5 @@
 import os
+import secrets
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -10,6 +11,13 @@ EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
 IMAP_SERVER = os.getenv("IMAP_SERVER")
 
 TIMEZONE = os.getenv("TIMEZONE", "Asia/Kolkata")
+
+JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", secrets.token_urlsafe(32))
+JWT_ALGORITHM = "HS256"
+JWT_EXPIRE_MINUTES = int(os.getenv("JWT_EXPIRE_MINUTES", 480))
+AUTH_COOKIE_NAME = os.getenv("AUTH_COOKIE_NAME", "mail_jira_token")
+DEFAULT_ADMIN_USERNAME = os.getenv("DEFAULT_ADMIN_USERNAME", "admin")
+DEFAULT_ADMIN_PASSWORD = os.getenv("DEFAULT_ADMIN_PASSWORD", "admin123")
 
 JIRA_BASE_URL = os.getenv("JIRA_BASE_URL")
 JIRA_EMAIL = os.getenv("JIRA_EMAIL")

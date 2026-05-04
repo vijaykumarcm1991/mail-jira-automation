@@ -1,7 +1,8 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from app.db.mongo import emails_collection
 from app.utils.helpers import generate_internal_id
 from app.models.email_model import create_email_doc
+from app.services.auth_service import require_admin
 
 router = APIRouter()
 
@@ -14,7 +15,8 @@ def get_tickets():
     return tickets
 
 @router.post("/api/tickets")
-def create_ticket():
+def create_ticket(request: Request):
+    require_admin(request)
     internal_id = generate_internal_id()
 
     data = {
