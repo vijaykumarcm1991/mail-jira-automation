@@ -58,6 +58,15 @@ def admin_users_page(request: Request):
     return templates.TemplateResponse(request, "admin_users.html", page_context(request))
 
 
+@router.get("/mailboxes", response_class=HTMLResponse)
+def mailboxes_page(request: Request):
+    user = get_user_from_request(request)
+    if user.get("role") != "admin":
+        return RedirectResponse("/login")
+
+    return templates.TemplateResponse(request, "mailboxes.html", page_context(request))
+
+
 @router.get("/audit", response_class=HTMLResponse)
 def audit_page(request: Request):
     user = get_user_from_request(request)

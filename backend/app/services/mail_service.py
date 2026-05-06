@@ -25,6 +25,7 @@ from email.mime.base import MIMEBase
 from email import encoders
 from app.db.mongo import failed_jobs_collection
 import uuid
+from app.services.mailbox_service import env_mailbox
 
 IST = pytz.timezone(TIMEZONE)
 
@@ -37,9 +38,14 @@ def normalize_msg_id(mid):
         return None
     return mid.strip().replace("<", "").replace(">", "")
 
-def fetch_unseen_emails():
-    mail = imaplib.IMAP4_SSL(IMAP_SERVER)
-    mail.login(EMAIL_ACCOUNT, EMAIL_PASSWORD)
+def fetch_unseen_emails(mailbox=None):
+    mailbox = mailbox or env_mailbox()
+    if not mailbox:
+        print("No mailbox configured")
+        return
+
+    mail = imaplib.IMAP4_SSL(mailbox["imap_server"])
+    mail.login(mailbox["email"], mailbox["password"])
     mail.select("inbox")
 
     status, messages = mail.search(None, '(UNSEEN)')
@@ -103,6 +109,8 @@ def fetch_unseen_emails():
             "from": from_email,
             "cc": cc.split(",") if cc else [],
             "jira_id": None,
+            "mailbox_id": str(mailbox.get("_id")) if mailbox.get("_id") else None,
+            "mailbox_email": mailbox.get("email"),
             "status": "New",
             "description": clean_text(body),
             "message_id": message_id,
@@ -180,7 +188,8 @@ def fetch_unseen_emails():
                 cc_list=data.get("cc", []),
                 subject=subject,
                 body=body,
-                message_id=message_id
+                message_id=message_id,
+                mailbox=mailbox
             )
 
             # ✅ DO NOT overwrite original message_id
@@ -200,11 +209,17 @@ def fetch_unseen_emails():
 
     mail.logout()
 
-def send_email(to_list, subject, body, cc_list=None, attachments=None, message_id=None):
+def send_email(to_list, subject, body, cc_list=None, attachments=None, message_id=None, mailbox=None):
+    mailbox = mailbox or env_mailbox()
+    from_email = mailbox.get("email") if mailbox else EMAIL_ACCOUNT
+    smtp_host = mailbox.get("smtp_host") if mailbox else SMTP_HOST
+    smtp_port = mailbox.get("smtp_port") if mailbox else SMTP_PORT
+    smtp_user = mailbox.get("smtp_user") if mailbox else SMTP_USER
+    smtp_password = mailbox.get("smtp_password") if mailbox else SMTP_PASS
 
     msg = MIMEMultipart()
     msg["Subject"] = subject
-    msg["From"] = EMAIL_ACCOUNT
+    msg["From"] = from_email
     msg["To"] = ", ".join(to_list)
 
     if message_id:
@@ -229,12 +244,12 @@ def send_email(to_list, subject, body, cc_list=None, attachments=None, message_i
             msg.attach(part)
 
     try:
-        with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT) as server:
-            server.login(SMTP_USER, SMTP_PASS)
+        with smtplib.SMTP_SSL(smtp_host, int(smtp_port)) as server:
+            server.login(smtp_user, smtp_password)
             # ✅ Generate message-id manually BEFORE sending
             generated_msg_id = f"<{uuid.uuid4()}@mail-jira.local>"
             msg["Message-ID"] = generated_msg_id
-            server.sendmail(EMAIL_ACCOUNT, recipients, msg.as_string())
+            server.sendmail(from_email, recipients, msg.as_string())
             return generated_msg_id
 
     except Exception as e:
@@ -247,7 +262,8 @@ def send_email(to_list, subject, body, cc_list=None, attachments=None, message_i
                 "to_list": to_list,
                 "cc_list": cc_list,
                 "subject": subject,
-                "body": body
+                "body": body,
+                "mailbox_id": str(mailbox.get("_id")) if mailbox else None
             },
             "retry_count": 0,
             "status": "pending",

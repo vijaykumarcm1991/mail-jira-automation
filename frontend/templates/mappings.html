@@ -28,6 +28,16 @@
             <span>Active</span>
         </label>
 
+        <div class="mb-3">
+            <label class="font-semibold">Mailbox</label>
+            <select x-model="rule.conditions.mailbox_email" class="border p-2 w-full mt-1">
+                <option value="">All mailboxes</option>
+                <template x-for="mailbox in mailboxes" :key="mailbox._id">
+                    <option :value="mailbox.email" x-text="mailbox.name ? `${mailbox.name} (${mailbox.email})` : mailbox.email"></option>
+                </template>
+            </select>
+        </div>
+
         <!-- Priority
         <input type="number"
             x-model="rule.priority"
@@ -176,6 +186,10 @@
                 </div>
 
                 <div class="text-sm mt-2">
+                    Mailbox: <span x-text="r.conditions.mailbox_email || 'All mailboxes'"></span>
+                </div>
+
+                <div class="text-sm">
                     Sender: <span x-text="r.conditions.sender_contains"></span>
                 </div>
 
@@ -203,6 +217,7 @@ function ruleApp() {
         subjectInput: "",
         senderInput: "",
         rules: [],
+        mailboxes: [],
         options: {},
         isEdit: false,
         isAdmin: {{ "true" if is_admin else "false" }},
@@ -210,6 +225,7 @@ function ruleApp() {
             rule_name: "",
             conditions: {
                 type: "AND",
+                mailbox_email: "",
                 sender_contains: [],
                 subject_contains: []
             },
@@ -220,6 +236,7 @@ function ruleApp() {
 
         async init() {
             await this.loadOptions()
+            if (this.isAdmin) await this.loadMailboxes()
             await this.loadRules()
         },
 
@@ -235,6 +252,18 @@ function ruleApp() {
         async loadRules() {
             const res = await fetch('/api/rules')
             this.rules = await res.json()
+            this.rules.forEach(r => {
+                r.conditions = r.conditions || {}
+                r.conditions.mailbox_email = r.conditions.mailbox_email || ""
+                r.conditions.sender_contains = r.conditions.sender_contains || []
+                r.conditions.subject_contains = r.conditions.subject_contains || []
+            })
+        },
+
+        async loadMailboxes() {
+            const res = await fetch('/api/mailboxes')
+            if (!res.ok) return
+            this.mailboxes = await res.json()
         },
 
         addKeyword() {
@@ -271,6 +300,10 @@ function ruleApp() {
         editRule(r) {
             if (!this.isAdmin) return
             this.rule = JSON.parse(JSON.stringify(r))
+            this.rule.conditions = this.rule.conditions || {}
+            this.rule.conditions.mailbox_email = this.rule.conditions.mailbox_email || ""
+            this.rule.conditions.sender_contains = this.rule.conditions.sender_contains || []
+            this.rule.conditions.subject_contains = this.rule.conditions.subject_contains || []
             this.isEdit = true
         },
 
@@ -293,6 +326,7 @@ function ruleApp() {
                 rule_name: "",
                 conditions: {
                     type: "AND",   // ✅ keep consistency
+                    mailbox_email: "",
                     sender_contains: [],
                     subject_contains: []
                 },

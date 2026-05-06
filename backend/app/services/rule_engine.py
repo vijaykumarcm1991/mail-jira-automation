@@ -10,22 +10,27 @@ def match_conditions(email_data, conditions):
     sender = email_data.get("from", "").lower()
     subject = email_data.get("subject", "").lower()
     body = email_data.get("description", "").lower()
+    mailbox_email = email_data.get("mailbox_email", "").lower()
 
     condition_type = conditions.get("type", "AND")
 
     results = []
 
+    selected_mailbox = conditions.get("mailbox_email")
+    if selected_mailbox:
+        results.append(str(selected_mailbox).lower() == mailbox_email)
+
     # Sender conditions (multiple)
-    if "sender_contains" in conditions:
-        sender_list = conditions["sender_contains"]
+    sender_list = conditions.get("sender_contains") or []
+    if sender_list:
 
         results.append(
             any(s.lower() in sender for s in sender_list)
         )
 
     # Subject/Body keywords
-    if "subject_contains" in conditions:
-        keywords = conditions["subject_contains"]
+    keywords = conditions.get("subject_contains") or []
+    if keywords:
         results.append(
             any(k.lower() in subject or k.lower() in body for k in keywords)
         )

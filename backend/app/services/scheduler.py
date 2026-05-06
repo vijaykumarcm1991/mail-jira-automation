@@ -6,13 +6,16 @@ from app.services.jira_status_service import sync_jira_status
 from app.db.mongo import failed_jobs_collection
 from app.services.jira_service import create_jira_ticket
 from app.services.mail_service import send_email
+from app.services.mailbox_service import get_enabled_mailboxes, get_mailbox_by_id
 
 
 def start_mail_listener():
     while True:
         try:
             print("Checking for new emails...")
-            fetch_unseen_emails()
+            for mailbox in get_enabled_mailboxes():
+                print(f"Checking mailbox: {mailbox.get('email')}")
+                fetch_unseen_emails(mailbox)
 
             # ✅ Sync Jira fields every cycle (temporary)
             sync_jira_fields()
@@ -53,7 +56,8 @@ def retry_failed_jobs():
                     to_list=payload["to_list"],
                     cc_list=payload.get("cc_list"),
                     subject=payload["subject"],
-                    body=payload["body"]
+                    body=payload["body"],
+                    mailbox=get_mailbox_by_id(payload.get("mailbox_id"))
                 )
 
                 failed_jobs_collection.update_one(
@@ -74,4 +78,3 @@ def retry_failed_jobs():
             # ✅ ALERT AFTER 3 FAILURES
             if job.get("retry_count", 0) >= 2:
                 print("ALERT: Job failed multiple times:", job["_id"])
-    

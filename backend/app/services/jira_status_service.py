@@ -5,7 +5,35 @@ from app.services.mail_service import send_email
 from app.db.mongo import db
 from app.services.jira_service import get_latest_comment, get_attachments
 from app.services.jira_service import get_l3_ticket_from_jsm, fetch_l3_status, get_l3_comment, get_l3_attachments
+from app.services.mailbox_service import get_mailbox_for_email_doc
 from jinja2 import Template
+
+
+def get_resolution_source(jira_id):
+    resolved_doc = emails_collection.find_one(
+        {
+            "jira_id": jira_id,
+            "$or": [
+                {"resolved_email_sent": True},
+                {"l3_resolved_email_sent": True},
+                {"resolution_source": {"$in": ["JSM", "L3"]}}
+            ]
+        },
+        {"resolution_source": 1, "resolved_email_sent": 1, "l3_resolved_email_sent": 1}
+    )
+
+    if not resolved_doc:
+        return None
+
+    if resolved_doc.get("resolution_source"):
+        return resolved_doc["resolution_source"]
+    if resolved_doc.get("resolved_email_sent"):
+        return "JSM"
+    if resolved_doc.get("l3_resolved_email_sent"):
+        return "L3"
+
+    return None
+
 
 def fetch_jira_status(issue_key):
     url = f"{JIRA_BASE_URL}/rest/api/3/issue/{issue_key}"
@@ -38,6 +66,11 @@ def sync_jira_status():
             }
         },
         {
+            "$sort": {
+                "created_at": 1
+            }
+        },
+        {
             "$group": {
                 "_id": "$jira_id",
                 "doc": {"$first": "$$ROOT"}
@@ -55,16 +88,17 @@ def sync_jira_status():
 
         latest_status = fetch_jira_status(jira_id)
         old_status = ticket.get("status")
+        resolution_source = get_resolution_source(jira_id)
 
         if latest_status and latest_status != old_status:
 
-            emails_collection.update_one(
-                {"internal_id": ticket["internal_id"]},
+            emails_collection.update_many(
+                {"jira_id": jira_id},
                 {"$set": {"status": latest_status}}
             )
 
             # 🔥 BLOCK if already resolved by L3
-            if ticket.get("resolution_source") == "L3":
+            if resolution_source == "L3":
                 continue
 
             # ❗ SKIP JSM EMAIL IF L3 EXISTS
@@ -74,6 +108,7 @@ def sync_jira_status():
             if (
                 latest_status.lower() == "resolved"
                 and not ticket.get("resolved_email_sent")
+                and resolution_source is None
             ):
 
                 template = db["email_templates"].find_one({"type": "resolved"})
@@ -104,19 +139,22 @@ def sync_jira_status():
                     subject=f"Re: {ticket.get('subject')}",
                     body=body,
                     attachments=attachments,
-                    message_id=ticket.get("message_id")
+                    message_id=ticket.get("message_id"),
+                    mailbox=get_mailbox_for_email_doc(ticket)
                 )
 
                 # ✅ mark email sent
-                emails_collection.update_one(
-                    {"_id": ticket["_id"]},
+                emails_collection.update_many(
+                    {"jira_id": jira_id},
                     {
                         "$set": {
+                            "status": latest_status,
                             "resolved_email_sent": True,
                             "resolution_source": "JSM"   # 🔥 NEW
                         }
                     }
                 )
+                resolution_source = "JSM"
 
         # ✅ GET L3 TICKET
         l3_jira_id = ticket.get("l3_jira_id")
@@ -130,8 +168,8 @@ def sync_jira_status():
             l3_jira_id = get_l3_ticket_from_jsm(jira_id)
 
         if l3_jira_id:
-            emails_collection.update_one(
-                {"_id": ticket["_id"]},
+            emails_collection.update_many(
+                {"jira_id": jira_id},
                 {"$set": {"l3_jira_id": l3_jira_id}}
             )
 
@@ -139,19 +177,20 @@ def sync_jira_status():
 
             if l3_status and l3_status != ticket.get("l3_status"):
 
-                emails_collection.update_one(
-                    {"_id": ticket["_id"]},
+                emails_collection.update_many(
+                    {"jira_id": jira_id},
                     {"$set": {"l3_status": l3_status}}
                 )
 
                 # 🔥 BLOCK if already resolved by JSM (rare but possible)
-                if ticket.get("resolution_source") == "JSM":
+                if resolution_source == "JSM":
                     continue
 
                 if (
                     l3_status
                     and l3_status.lower() == "resolved"
                     and not ticket.get("l3_resolved_email_sent")
+                    and resolution_source is None
                 ):
 
                     latest_comment = get_l3_comment(l3_jira_id)
@@ -180,17 +219,20 @@ def sync_jira_status():
                         subject=f"Re: {ticket.get('subject')}",
                         body=body,
                         attachments=attachments,
-                        message_id=ticket.get("message_id")
+                        message_id=ticket.get("message_id"),
+                        mailbox=get_mailbox_for_email_doc(ticket)
                     )
 
-                    emails_collection.update_one(
-                        {"_id": ticket["_id"]},
+                    emails_collection.update_many(
+                        {"jira_id": jira_id},
                         {
                             "$set": {
+                                "l3_status": l3_status,
                                 "l3_resolved_email_sent": True,
                                 "resolution_source": "L3"   # 🔥 NEW
                             }
                         }
                     )
+                    resolution_source = "L3"
 
     print("Jira status sync completed.")

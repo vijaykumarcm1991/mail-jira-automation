@@ -38,6 +38,7 @@ def create_or_update_rule(rule: dict, request: Request):
         {
             "active": rule.get("active"),
             "condition_type": rule.get("conditions", {}).get("type"),
+            "mailbox_email": rule.get("conditions", {}).get("mailbox_email"),
             "actions": rule.get("actions", {}),
         },
         actor,
