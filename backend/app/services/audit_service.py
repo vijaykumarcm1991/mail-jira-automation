@@ -27,5 +27,8 @@ def log_audit(request, action, resource, resource_id=None, details=None, actor=N
 def serialize_audit_log(log):
     log["_id"] = str(log["_id"])
     if log.get("timestamp"):
-        log["timestamp"] = log["timestamp"].isoformat()
+        timestamp = log["timestamp"]
+        if timestamp.tzinfo is None:
+            timestamp = pytz.utc.localize(timestamp)
+        log["timestamp"] = timestamp.astimezone(IST).isoformat()
     return log
