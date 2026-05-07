@@ -3,8 +3,8 @@ from app.db.mongo import emails_collection
 from app.config.settings import JIRA_BASE_URL, JIRA_EMAIL, JIRA_API_TOKEN
 from app.services.mail_service import send_email
 from app.db.mongo import db
-from app.services.jira_service import get_latest_comment, get_attachments
-from app.services.jira_service import get_l3_ticket_from_jsm, fetch_l3_status, get_l3_comment, get_l3_attachments
+from app.services.jira_service import get_latest_comment
+from app.services.jira_service import get_l3_ticket_from_jsm, fetch_l3_status, get_l3_comment
 from app.services.mailbox_service import get_mailbox_for_email_doc
 from jinja2 import Template
 
@@ -128,17 +128,11 @@ def sync_jira_status():
 
                 body = Template(template["body"]).render(**context)
 
-                attachments = get_attachments(
-                    jira_id,
-                    skip_files=ticket.get("email_attachments", [])
-                )
-
                 send_email(
                     to_list=[ticket.get("from")],
                     cc_list=ticket.get("cc", []),
                     subject=f"Re: {ticket.get('subject')}",
                     body=body,
-                    attachments=attachments,
                     message_id=ticket.get("message_id"),
                     mailbox=get_mailbox_for_email_doc(ticket)
                 )
@@ -194,7 +188,6 @@ def sync_jira_status():
                 ):
 
                     latest_comment = get_l3_comment(l3_jira_id)
-                    attachments = get_l3_attachments(l3_jira_id)
 
                     template = db["email_templates"].find_one({"type": "resolved"})
 
@@ -218,7 +211,6 @@ def sync_jira_status():
                         cc_list=ticket.get("cc", []),
                         subject=f"Re: {ticket.get('subject')}",
                         body=body,
-                        attachments=attachments,
                         message_id=ticket.get("message_id"),
                         mailbox=get_mailbox_for_email_doc(ticket)
                     )
