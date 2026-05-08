@@ -163,7 +163,18 @@ def get_attachments(issue_key, skip_files=None):
     return files
 
 
-def add_comment_to_jira(issue_key, comment):
+def add_comment_to_jira(issue_key, comment, is_customer_visible=True):
+    """Add a comment to a JSM ticket with visibility control.
+
+    Args:
+        issue_key: The JSM ticket key (e.g., 'TICKET-123')
+        comment: The comment text to add
+        is_customer_visible: If True, comment is visible to customers and may trigger notifications.
+                           If False, comment is internal (internal note) and won't trigger notifications.
+
+    Returns:
+        bool: True if comment was successfully added, False otherwise
+    """
     url = f"{JIRA_BASE_URL}/rest/api/3/issue/{issue_key}/comment"
 
     auth = (JIRA_EMAIL, JIRA_API_TOKEN)
@@ -191,10 +202,22 @@ def add_comment_to_jira(issue_key, comment):
         }
     }
 
+    # Add visibility control for JSM internal notes
+    if not is_customer_visible:
+        payload["properties"] = [
+            {
+                "key": "sd.public.comment",
+                "value": {"internal": True}
+            }
+        ]
+
     response = requests.post(url, json=payload, headers=headers, auth=auth)
 
-    if response.status_code != 201:
-        print("Failed to add comment:", response.text)
+    if response.status_code == 201:
+        return True
+    else:
+        print(f"Failed to add comment to {issue_key}: {response.text}")
+        return False
 
 def get_l3_ticket_from_jsm(issue_key):
     url = f"{JIRA_BASE_URL}/rest/api/3/issue/{issue_key}"

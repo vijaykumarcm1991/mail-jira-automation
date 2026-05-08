@@ -4,7 +4,7 @@ from app.config.settings import JIRA_BASE_URL, JIRA_EMAIL, JIRA_API_TOKEN
 from app.services.mail_service import send_email
 from app.db.mongo import db
 from app.services.jira_service import get_latest_comment
-from app.services.jira_service import get_l3_ticket_from_jsm, fetch_l3_status, get_l3_comment
+from app.services.jira_service import get_l3_ticket_from_jsm, fetch_l3_status, get_l3_comment, add_comment_to_jira
 from app.services.mailbox_service import get_mailbox_for_email_doc
 from jinja2 import Template
 
