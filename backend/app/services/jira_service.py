@@ -120,7 +120,17 @@ def create_jira_ticket(data, rule_actions, attachments=None):
 
         return None
     
-def get_latest_comment(issue_key):
+def get_latest_comment(issue_key, include_internal=False):
+    """Get the latest comment from a JSM ticket.
+
+    Args:
+        issue_key: The JSM ticket key (e.g., 'TICKET-123')
+        include_internal: If False (default), only return customer-visible comments.
+                         If True, include internal comments too.
+
+    Returns:
+        str: The latest comment text (Jira ADF format parsed), or "" if no comments
+    """
     url = f"{JIRA_BASE_URL}/rest/api/3/issue/{issue_key}/comment"
 
     auth = (JIRA_EMAIL, JIRA_API_TOKEN)
@@ -132,6 +142,16 @@ def get_latest_comment(issue_key):
     comments = response.json().get("comments", [])
     if not comments:
         return ""
+
+    # Filter out internal comments if requested
+    if not include_internal:
+        visible_comments = [
+            c for c in comments
+            if not any(prop.get("key") == "sd.public.comment" and prop.get("value", {}).get("internal") is True
+                      for prop in c.get("properties", []))
+        ]
+        if visible_comments:
+            comments = visible_comments
 
     latest = comments[-1]
     return latest.get("body", {}).get("content", [{}])[0].get("content", [{}])[0].get("text", "")
