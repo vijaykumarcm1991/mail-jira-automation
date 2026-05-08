@@ -101,10 +101,6 @@ def sync_jira_status():
             if resolution_source == "L3":
                 continue
 
-            # ❗ SKIP JSM EMAIL IF L3 EXISTS
-            if ticket.get("l3_jira_id"):
-                continue
-
             if (
                 latest_status.lower() == "resolved"
                 and not ticket.get("resolved_email_sent")
@@ -176,55 +172,7 @@ def sync_jira_status():
                     {"$set": {"l3_status": l3_status}}
                 )
 
-                # 🔥 BLOCK if already resolved by JSM (rare but possible)
-                if resolution_source == "JSM":
-                    continue
-
-                if (
-                    l3_status
-                    and l3_status.lower() == "resolved"
-                    and not ticket.get("l3_resolved_email_sent")
-                    and resolution_source is None
-                ):
-
-                    latest_comment = get_l3_comment(l3_jira_id)
-
-                    template = db["email_templates"].find_one({"type": "resolved"})
-
-                    if not template:
-                        print("Resolved template not found")
-                        continue
-                    
-                    jsm_id = ticket.get("jira_id")
-
-                    context = {
-                        "jira_id": jsm_id,
-                        "status": l3_status,
-                        "comment": latest_comment,
-                        "l3_jira_id": ticket.get("l3_jira_id") or ""
-                    }
-
-                    body = Template(template["body"]).render(**context)
-
-                    send_email(
-                        to_list=[ticket.get("from")],
-                        cc_list=ticket.get("cc", []),
-                        subject=f"Re: {ticket.get('subject')}",
-                        body=body,
-                        message_id=ticket.get("message_id"),
-                        mailbox=get_mailbox_for_email_doc(ticket)
-                    )
-
-                    emails_collection.update_many(
-                        {"jira_id": jira_id},
-                        {
-                            "$set": {
-                                "l3_status": l3_status,
-                                "l3_resolved_email_sent": True,
-                                "resolution_source": "L3"   # 🔥 NEW
-                            }
-                        }
-                    )
-                    resolution_source = "L3"
+                # 🔥 NO LONGER SEND EMAIL ON L3 RESOLUTION
+                # Keep L3 status for dashboard visibility only
 
     print("Jira status sync completed.")
