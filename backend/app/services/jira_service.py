@@ -120,6 +120,137 @@ def create_jira_ticket(data, rule_actions, attachments=None):
 
         return None
     
+def _extract_adf_text(node):
+    if isinstance(node, dict):
+        text = node.get("text", "")
+        child_text = [_extract_adf_text(child) for child in node.get("content", [])]
+        return "\n".join(part for part in [text, *child_text] if part)
+
+    if isinstance(node, list):
+        return "\n".join(part for child in node for part in [_extract_adf_text(child)] if part)
+
+    return ""
+
+
+def _extract_comment_text(comment):
+    body = comment.get("body", "")
+    if isinstance(body, str):
+        return body.strip()
+    return _extract_adf_text(body).strip()
+
+
+def _get_comment_property(comment_id, property_key):
+    url = f"{JIRA_BASE_URL}/rest/api/3/comment/{comment_id}/properties/{property_key}"
+
+    auth = (JIRA_EMAIL, JIRA_API_TOKEN)
+    headers = {
+        "Accept": "application/json"
+    }
+
+    response = requests.get(url, headers=headers, auth=auth)
+
+    if response.status_code == 404:
+        return None
+
+    if response.status_code != 200:
+        print(f"Failed to fetch comment property {property_key} for {comment_id}: {response.status_code} {response.text}")
+        return None
+
+    return response.json().get("value")
+
+
+def _property_value_is_true(value):
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.lower() == "true"
+    return False
+
+
+def _is_platform_comment_customer_visible(comment):
+    comment_id = comment.get("id")
+    if not comment_id:
+        return False
+
+    visibility = _get_comment_property(comment_id, "sd.public.comment")
+    if isinstance(visibility, dict):
+        if isinstance(visibility.get("value"), dict):
+            visibility = visibility["value"]
+        if "internal" in visibility:
+            return not _property_value_is_true(visibility.get("internal"))
+
+    legacy_visibility = _get_comment_property(comment_id, "sd.allow.public.comment")
+    if isinstance(legacy_visibility, dict):
+        if "allow" in legacy_visibility:
+            return _property_value_is_true(legacy_visibility.get("allow"))
+        if "internal" in legacy_visibility:
+            return not _property_value_is_true(legacy_visibility.get("internal"))
+
+    return False
+
+
+def get_latest_platform_customer_visible_comment(issue_key):
+    url = f"{JIRA_BASE_URL}/rest/api/3/issue/{issue_key}/comment"
+
+    auth = (JIRA_EMAIL, JIRA_API_TOKEN)
+    headers = {
+        "Accept": "application/json"
+    }
+    params = {
+        "maxResults": 100,
+        "orderBy": "-created"
+    }
+
+    response = requests.get(url, headers=headers, auth=auth, params=params)
+
+    if response.status_code != 200:
+        print(f"Failed to fetch Jira comments for {issue_key}: {response.status_code} {response.text}")
+        return ""
+
+    comments = sorted(
+        response.json().get("comments", []),
+        key=lambda comment: comment.get("created", ""),
+        reverse=True
+    )
+    for comment in comments:
+        if _is_platform_comment_customer_visible(comment):
+            return _extract_comment_text(comment)
+
+    return ""
+
+
+def get_latest_customer_visible_comment(issue_key):
+    """Return the latest JSM Cloud Reply to customer comment only."""
+    url = f"{JIRA_BASE_URL}/rest/servicedeskapi/request/{issue_key}/comment"
+
+    auth = (JIRA_EMAIL, JIRA_API_TOKEN)
+    headers = {
+        "Accept": "application/json"
+    }
+    params = {
+        "public": "true",
+        "internal": "false",
+        "limit": 100
+    }
+
+    response = requests.get(url, headers=headers, auth=auth, params=params)
+
+    if response.status_code != 200:
+        print(f"Failed to fetch JSM public comments for {issue_key}: {response.status_code} {response.text}")
+        return get_latest_platform_customer_visible_comment(issue_key)
+
+    comments = response.json().get("values", [])
+    public_comments = sorted([
+        comment for comment in comments
+        if comment.get("public") is not False
+    ], key=lambda comment: comment.get("created", ""), reverse=True)
+
+    if not public_comments:
+        return ""
+
+    return _extract_comment_text(public_comments[0])
+
+
 def get_latest_comment(issue_key, include_internal=False):
     """Get the latest comment from a JSM ticket.
 
@@ -131,7 +262,7 @@ def get_latest_comment(issue_key, include_internal=False):
     Returns:
         str: The latest comment text (Jira ADF format parsed), or "" if no comments
     """
-    url = f"{JIRA_BASE_URL}/rest/api/3/issue/{issue_key}/comment"
+    url = f"{JIRA_BASE_URL}/rest/api/3/issue/{issue_key}/comment?expand=properties"
 
     auth = (JIRA_EMAIL, JIRA_API_TOKEN)
     response = requests.get(url, auth=auth)
@@ -143,18 +274,19 @@ def get_latest_comment(issue_key, include_internal=False):
     if not comments:
         return ""
 
-    # Filter out internal comments if requested
+    # Filter out internal comments if requested.
     if not include_internal:
         visible_comments = [
             c for c in comments
             if not any(prop.get("key") == "sd.public.comment" and prop.get("value", {}).get("internal") is True
                       for prop in c.get("properties", []))
         ]
-        if visible_comments:
-            comments = visible_comments
+        if not visible_comments:
+            return ""
+        comments = visible_comments
 
     latest = comments[-1]
-    return latest.get("body", {}).get("content", [{}])[0].get("content", [{}])[0].get("text", "")
+    return _extract_comment_text(latest)
 
 
 def get_attachments(issue_key, skip_files=None):

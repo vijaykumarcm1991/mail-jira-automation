@@ -1,20 +1,15 @@
-import requests
 from app.db.mongo import emails_collection
 from app.config.settings import JIRA_BASE_URL, JIRA_EMAIL, JIRA_API_TOKEN
 from app.services.mail_service import send_email
 from app.db.mongo import db
-from app.services.jira_service import get_latest_comment
+from app.services.jira_service import get_latest_customer_visible_comment
+from app.services.jira_service import get_l3_ticket_from_jsm, fetch_l3_status, add_comment_to_jira
+from app.services.mailbox_service import get_mailbox_for_email_doc
+from jinja2 import Template
+from datetime import datetime, timedelta, timezone
 import requests
-from app.db.mongo import emails_collection
-from app.config.settings import JIRA_BASE_URL, JIRA_EMAIL, JIRA_API_TOKEN
-from app.services.mail_service import send_email
-from app.db.mongo import db
-from app.services.jira_service import get_latest_comment
-from app.services.jira_service import get_l3_ticket_from_jsm, fetch_l3_status, get_l3_comment, add_comment_to_jira
-from app.services.mailbox_service import get_mailbox_for_email_doc
-from jinja2 import Template
-from app.services.mailbox_service import get_mailbox_for_email_doc
-from jinja2 import Template
+
+RESOLUTION_EMAIL_START_AT = datetime.now(timezone.utc) - timedelta(minutes=10)
 
 
 def get_resolution_source(jira_id):
@@ -61,18 +56,54 @@ def fetch_jira_status(issue_key):
     return response.json()["fields"]["status"]["name"]
 
 
-def should_send_resolution_email(ticket_data, has_customer_visible_resolution=False):
+def parse_jira_datetime(value):
+    if not value:
+        return None
+
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def fetch_jira_issue_state(issue_key):
+    url = f"{JIRA_BASE_URL}/rest/api/3/issue/{issue_key}"
+
+    auth = (JIRA_EMAIL, JIRA_API_TOKEN)
+
+    headers = {
+        "Accept": "application/json"
+    }
+
+    response = requests.get(url, headers=headers, auth=auth)
+
+    if response.status_code != 200:
+        print(f"Failed to fetch {issue_key}", response.text)
+        return None
+
+    fields = response.json().get("fields", {})
+    return {
+        "status": fields.get("status", {}).get("name"),
+        "updated_at": parse_jira_datetime(fields.get("updated"))
+    }
+
+
+def should_send_resolution_email(ticket_data, customer_visible_comment=""):
     """
     Determine if a resolution email should be sent to the customer.
 
     Only sends emails when:
     1. Ticket is resolved
     2. No resolution email has been sent yet
-    3. There's actually a customer-visible resolution comment
+    3. There's actually a customer-visible Reply to customer comment
 
     Args:
         ticket_data: Dictionary containing ticket information
-        has_customer_visible_resolution: Whether there's a customer-visible resolution comment
+        customer_visible_comment: Latest customer-visible Reply to customer comment
 
     Returns:
         bool: True if resolution email should be sent
@@ -83,19 +114,7 @@ def should_send_resolution_email(ticket_data, has_customer_visible_resolution=Fa
     if ticket_data.get('resolved_email_sent'):
         return False
 
-    # Only send email if there's a actual customer-visible resolution comment
-    return has_customer_visible_resolution
-
-
-def is_resolution_comment(comment_text):
-    """Check if a comment indicates resolution (closed, resolved, fixed, etc.)"""
-    if not comment_text:
-        return False
-
-    resolution_keywords = ['resolved', 'closed', 'fixed', 'completed', 'done', 'cancelled', 'canceled']
-    comment_lower = comment_text.lower()
-
-    return any(keyword in comment_lower for keyword in resolution_keywords)
+    return bool(customer_visible_comment)
 
 
 def sync_jira_status():
@@ -131,7 +150,9 @@ def sync_jira_status():
         if not jira_id:
             continue
 
-        latest_status = fetch_jira_status(jira_id)
+        latest_state = fetch_jira_issue_state(jira_id)
+        latest_status = latest_state.get("status") if latest_state else None
+        latest_updated_at = latest_state.get("updated_at") if latest_state else None
         old_status = ticket.get("status")
         resolution_source = get_resolution_source(jira_id)
 
@@ -142,6 +163,7 @@ def sync_jira_status():
                 {"$set": {"status": latest_status}}
             )
 
+        if latest_status and latest_status != old_status:
             # 🔥 BLOCK if already resolved by L3
             if resolution_source == "L3":
                 continue
@@ -151,12 +173,14 @@ def sync_jira_status():
                 and not ticket.get("resolved_email_sent")
                 and resolution_source is None
             ):
+                if latest_updated_at and latest_updated_at < RESOLUTION_EMAIL_START_AT:
+                    print(f"Skipping resolution email for {jira_id} - resolved before this service run")
+                    continue
 
-                # Check if there's actually a customer-visible resolution comment
-                latest_visible_comment = get_latest_comment(jira_id, include_internal=False)
-                if not latest_visible_comment or not is_resolution_comment(latest_visible_comment):
-                    # No customer-visible resolution comment, skip sending email
-                    print(f"Skipping resolution email for {jira_id} - resolution not in customer-visible comment")
+                # Only send customer mail from the latest Reply to customer comment.
+                latest_visible_comment = get_latest_customer_visible_comment(jira_id)
+                if not should_send_resolution_email({**ticket, "status": latest_status}, latest_visible_comment):
+                    print(f"Skipping resolution email for {jira_id} - no customer-visible reply comment")
                     continue
 
                 template = db["email_templates"].find_one({"type": "resolved"})
@@ -174,14 +198,19 @@ def sync_jira_status():
 
                 body = Template(template["body"]).render(**context)
 
-                send_email(
+                sent_msg_id = send_email(
                     to_list=[ticket.get("from")],
                     cc_list=ticket.get("cc", []),
                     subject=f"Re: {ticket.get('subject')}",
                     body=body,
                     message_id=ticket.get("message_id"),
-                    mailbox=get_mailbox_for_email_doc(ticket)
+                    mailbox=get_mailbox_for_email_doc(ticket),
+                    metadata={"purpose": "resolution", "jira_id": jira_id}
                 )
+
+                if not sent_msg_id:
+                    print(f"Resolution email failed for {jira_id}")
+                    continue
 
                 # ✅ mark email sent
                 emails_collection.update_many(

@@ -6,7 +6,7 @@ from app.services.jira_status_service import sync_jira_status
 from app.db.mongo import failed_jobs_collection
 from app.services.jira_service import create_jira_ticket
 from app.services.mail_service import send_email
-from app.services.mailbox_service import get_enabled_mailboxes, get_mailbox_by_id
+from app.services.mailbox_service import get_enabled_mailboxes, get_mailbox_for_email_doc
 
 
 def start_mail_listener():
@@ -52,13 +52,16 @@ def retry_failed_jobs():
             elif job["type"] == "email":
                 payload = job["payload"]
 
-                send_email(
+                sent_msg_id = send_email(
                     to_list=payload["to_list"],
                     cc_list=payload.get("cc_list"),
                     subject=payload["subject"],
                     body=payload["body"],
-                    mailbox=get_mailbox_by_id(payload.get("mailbox_id"))
+                    mailbox=get_mailbox_for_email_doc(payload)
                 )
+
+                if not sent_msg_id:
+                    raise RuntimeError("Email retry failed")
 
                 failed_jobs_collection.update_one(
                     {"_id": job["_id"]},

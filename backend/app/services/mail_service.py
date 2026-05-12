@@ -25,7 +25,7 @@ from email.mime.base import MIMEBase
 from email import encoders
 from app.db.mongo import failed_jobs_collection
 import uuid
-from app.services.mailbox_service import env_mailbox
+from app.services.mailbox_service import env_mailbox, get_default_outbound_mailbox
 
 IST = pytz.timezone(TIMEZONE)
 
@@ -209,42 +209,56 @@ def fetch_unseen_emails(mailbox=None):
 
     mail.logout()
 
-def send_email(to_list, subject, body, cc_list=None, attachments=None, message_id=None, mailbox=None):
-    mailbox = mailbox or env_mailbox()
+def send_email(to_list, subject, body, cc_list=None, attachments=None, message_id=None, mailbox=None, metadata=None):
+    mailbox = mailbox or get_default_outbound_mailbox()
     from_email = mailbox.get("email") if mailbox else EMAIL_ACCOUNT
     smtp_host = mailbox.get("smtp_host") if mailbox else SMTP_HOST
     smtp_port = mailbox.get("smtp_port") if mailbox else SMTP_PORT
     smtp_user = mailbox.get("smtp_user") if mailbox else SMTP_USER
     smtp_password = mailbox.get("smtp_password") if mailbox else SMTP_PASS
 
-    msg = MIMEMultipart()
-    msg["Subject"] = subject
-    msg["From"] = from_email
-    msg["To"] = ", ".join(to_list)
-
-    if message_id:
-        msg["In-Reply-To"] = message_id
-        msg["References"] = message_id
-
-    if cc_list:
-        msg["Cc"] = ", ".join(cc_list)
-        recipients = to_list + cc_list
-    else:
-        recipients = to_list
-
-    msg.attach(MIMEText(body, "plain"))
-
-    # ✅ Attach files
-    if attachments:
-        for filename, content in attachments:
-            part = MIMEBase("application", "octet-stream")
-            part.set_payload(content)
-            encoders.encode_base64(part)
-            part.add_header("Content-Disposition", f"attachment; filename={filename}")
-            msg.attach(part)
-
     try:
-        with smtplib.SMTP_SSL(smtp_host, int(smtp_port)) as server:
+        if not smtp_host or not smtp_port or not smtp_user or not smtp_password:
+            raise ValueError("SMTP host, port, user, and password are required")
+
+        recipients = list(to_list or []) + list(cc_list or [])
+        if not recipients:
+            raise ValueError("At least one email recipient is required")
+
+        msg = MIMEMultipart()
+        msg["Subject"] = subject
+        msg["From"] = from_email
+        msg["To"] = ", ".join(to_list or [])
+
+        if message_id:
+            msg["In-Reply-To"] = message_id
+            msg["References"] = message_id
+
+        if cc_list:
+            msg["Cc"] = ", ".join(cc_list)
+
+        msg.attach(MIMEText(body, "plain"))
+
+        # ✅ Attach files
+        if attachments:
+            for filename, content in attachments:
+                part = MIMEBase("application", "octet-stream")
+                part.set_payload(content)
+                encoders.encode_base64(part)
+                part.add_header("Content-Disposition", f"attachment; filename={filename}")
+                msg.attach(part)
+
+        smtp_port = int(smtp_port)
+        if smtp_port == 465:
+            server = smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=30)
+        else:
+            server = smtplib.SMTP(smtp_host, smtp_port, timeout=30)
+
+        with server:
+            if smtp_port != 465:
+                server.ehlo()
+                server.starttls()
+                server.ehlo()
             server.login(smtp_user, smtp_password)
             # ✅ Generate message-id manually BEFORE sending
             generated_msg_id = f"<{uuid.uuid4()}@mail-jira.local>"
@@ -263,7 +277,9 @@ def send_email(to_list, subject, body, cc_list=None, attachments=None, message_i
                 "cc_list": cc_list,
                 "subject": subject,
                 "body": body,
-                "mailbox_id": str(mailbox.get("_id")) if mailbox else None
+                "mailbox_id": str(mailbox.get("_id")) if mailbox else None,
+                "mailbox_email": mailbox.get("email") if mailbox else None,
+                "metadata": metadata or {}
             },
             "retry_count": 0,
             "status": "pending",

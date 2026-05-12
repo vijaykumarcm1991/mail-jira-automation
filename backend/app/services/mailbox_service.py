@@ -72,6 +72,14 @@ def get_enabled_mailboxes():
     return [fallback] if fallback else []
 
 
+def get_default_outbound_mailbox():
+    mailbox = mailboxes_collection.find_one({"enabled": True}, sort=[("email", 1)])
+    if mailbox:
+        return serialize_mailbox(mailbox, include_secret=True)
+
+    return env_mailbox()
+
+
 def get_mailbox_by_id(mailbox_id):
     if not mailbox_id:
         return None
@@ -95,7 +103,7 @@ def get_mailbox_for_email_doc(email_doc):
         if mailbox:
             return serialize_mailbox(mailbox, include_secret=True)
 
-    return env_mailbox()
+    return get_default_outbound_mailbox()
 
 
 def validate_mailbox_payload(data, existing=None):
@@ -149,7 +157,17 @@ def send_test_email(mailbox, recipient):
     msg["To"] = recipient
     msg["Message-ID"] = f"<{uuid.uuid4()}@mail-jira.local>"
 
-    with smtplib.SMTP_SSL(mailbox["smtp_host"], int(mailbox["smtp_port"])) as server:
+    smtp_port = int(mailbox["smtp_port"])
+    if smtp_port == 465:
+        server = smtplib.SMTP_SSL(mailbox["smtp_host"], smtp_port, timeout=30)
+    else:
+        server = smtplib.SMTP(mailbox["smtp_host"], smtp_port, timeout=30)
+
+    with server:
+        if smtp_port != 465:
+            server.ehlo()
+            server.starttls()
+            server.ehlo()
         server.login(mailbox["smtp_user"], mailbox["smtp_password"])
         server.sendmail(mailbox["email"], [recipient], msg.as_string())
 
