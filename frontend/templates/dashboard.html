@@ -20,39 +20,64 @@
             </tr>
         </thead>
 
-        <tbody>
             <template x-for="t in tickets" :key="t.internal_id">
-                <tr class="border-t">
-                    <td class="p-2" x-text="t.internal_id"></td>
-                    <td class="p-2" x-text="t.subject"></td>
-                    <!-- ✅ JSM ID + STATUS -->
-                    <td class="p-2">
-                        <a :href="jiraBaseUrl + '/browse/' + t.jira_id"
-                            target="_blank"
-                            class="text-blue-600 hover:underline">
-                            <span x-text="t.jira_id"></span>
-                        </a>
-                        <div class="text-xs text-gray-500" x-text="t.status"></div>
-                    </td>
+                <tbody>
+                    <tr class="border-t cursor-pointer hover:bg-gray-50"
+                        @click="toggleTicket(t.internal_id)">
+                        <td class="p-2">
+                            <span class="inline-block w-4 text-gray-400"
+                                  x-text="expandedTicketId === t.internal_id ? '▾' : '▸'"></span>
+                            <span x-text="t.internal_id"></span>
+                        </td>
+                        <td class="p-2" x-text="t.subject"></td>
+                        <!-- ✅ JSM ID + STATUS -->
+                        <td class="p-2">
+                            <a :href="jiraBaseUrl + '/browse/' + t.jira_id"
+                                target="_blank"
+                                class="text-blue-600 hover:underline"
+                                @click.stop>
+                                <span x-text="t.jira_id"></span>
+                            </a>
+                            <div class="text-xs text-gray-500" x-text="t.status"></div>
+                        </td>
 
-                    <!-- ✅ L3 JIRA ID + STATUS -->
-                    <td class="p-2">
-                        <a :href="l3BaseUrl ? l3BaseUrl + '/browse/' + t.l3_jira_id : '#'"
-                            target="_blank"
-                            class="text-blue-600 hover:underline"
-                            x-show="t.l3_jira_id">
-                            <span x-text="t.l3_jira_id"></span>
-                        </a>
-                        <div class="text-xs text-gray-500" x-text="t.l3_status"></div>
+                        <!-- ✅ L3 JIRA ID + STATUS -->
+                        <td class="p-2">
+                            <a :href="l3BaseUrl ? l3BaseUrl + '/browse/' + t.l3_jira_id : '#'"
+                                target="_blank"
+                                class="text-blue-600 hover:underline"
+                                x-show="t.l3_jira_id"
+                                @click.stop>
+                                <span x-text="t.l3_jira_id"></span>
+                            </a>
+                            <div class="text-xs text-gray-500" x-text="t.l3_status"></div>
 
-                        <!-- optional fallback -->
-                        <template x-if="!t.l3_jira_id">
-                            <span class="text-gray-400 text-xs">N/A</span>
-                        </template>
-                    </td>
-                </tr>
+                            <!-- optional fallback -->
+                            <template x-if="!t.l3_jira_id">
+                                <span class="text-gray-400 text-xs">N/A</span>
+                            </template>
+                        </td>
+                    </tr>
+                    <tr x-show="expandedTicketId === t.internal_id" class="bg-gray-50">
+                        <td colspan="4" class="p-4">
+                            <div class="border-l-2 border-gray-200 ml-3">
+                                <template x-for="event in t.timeline || []">
+                                    <div class="relative pl-6 pb-4 text-sm">
+                                        <span class="absolute -left-2 top-1 h-3 w-3 rounded-full"
+                                              :class="timelineColor(event.status)"></span>
+                                        <div class="font-medium text-gray-800" x-text="event.label"></div>
+                                        <div class="text-xs text-gray-500">
+                                            <span x-text="formatTimelineTime(event.timestamp)"></span>
+                                            <span x-show="event.detail"> · </span>
+                                            <span x-show="event.detail" x-text="event.detail"></span>
+                                        </div>
+                                    </div>
+                                </template>
+                            </div>
+                        </td>
+                    </tr>
+                </tbody>
             </template>
-        </tbody>
     </table>
     </div>
 
@@ -118,6 +143,7 @@ function dashboardApp() {
         tickets: [],
         logs: [],
         failedJobs: [],
+        expandedTicketId: null,
         isAdmin: {{ "true" if is_admin else "false" }},
         jiraBaseUrl: "{{ jira_base_url }}",
         l3BaseUrl: "{{ l3_jira_base_url }}",
@@ -153,6 +179,25 @@ function dashboardApp() {
             if (!this.isAdmin) return
             await fetch(`/api/retry-job/${id}`, { method: 'POST' })
             await this.loadFailedJobs()
+        },
+
+        toggleTicket(id) {
+            this.expandedTicketId = this.expandedTicketId === id ? null : id
+        },
+
+        timelineColor(status) {
+            return {
+                success: 'bg-green-500',
+                warning: 'bg-yellow-500',
+                error: 'bg-red-500',
+                info: 'bg-blue-500'
+            }[status] || 'bg-blue-500'
+        },
+
+        formatTimelineTime(value) {
+            return value
+                ? new Date(value).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })
+                : 'Time unavailable'
         }
     }
 }
