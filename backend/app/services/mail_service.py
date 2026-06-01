@@ -209,7 +209,7 @@ def fetch_unseen_emails(mailbox=None):
 
     mail.logout()
 
-def send_email(to_list, subject, body, cc_list=None, attachments=None, message_id=None, mailbox=None, metadata=None):
+def send_email(to_list, subject, body, cc_list=None, attachments=None, message_id=None, mailbox=None, metadata=None, from_retry=False):
     mailbox = mailbox or get_default_outbound_mailbox()
     from_email = mailbox.get("email") if mailbox else EMAIL_ACCOUNT
     smtp_host = mailbox.get("smtp_host") if mailbox else SMTP_HOST
@@ -268,6 +268,11 @@ def send_email(to_list, subject, body, cc_list=None, attachments=None, message_i
 
     except Exception as e:
         print("Email Error:", str(e))
+
+        # ✅ When called from a manual retry the caller already owns an existing
+        # failed-job record, so don't create a duplicate here.
+        if from_retry:
+            return None
 
         # ✅ STORE FAILED EMAIL
         failed_jobs_collection.insert_one({
