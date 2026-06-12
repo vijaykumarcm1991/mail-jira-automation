@@ -8,12 +8,57 @@ from app.config.settings import (
     JIRA_PROJECT_KEY,      # ✅ ADD THIS
     JIRA_ISSUE_TYPE        # ✅ ADD THIS
 )
-from app.db.mongo import failed_jobs_collection
+from app.db.mongo import failed_jobs_collection, emails_collection
 from datetime import datetime
 import re
 from app.config.settings import JIRA_ONPREM_URL, JIRA_ONPREM_USER, JIRA_ONPREM_PASS
 
-def create_jira_ticket(data, rule_actions, attachments=None):
+
+def _internal_id_label(internal_id):
+    # Jira labels cannot contain spaces.
+    return f"mailjira-{str(internal_id).replace(' ', '-')}"
+
+
+def find_existing_jira_by_internal_id(internal_id):
+    """Return the key of an existing Jira ticket tagged with this internal_id,
+    or None. Keeps create_jira_ticket idempotent across retries."""
+    if not internal_id:
+        return None
+
+    jql = f'project = "{JIRA_PROJECT_KEY}" AND labels = "{_internal_id_label(internal_id)}"'
+    url = f"{JIRA_BASE_URL}/rest/api/3/search/jql"
+    auth = (JIRA_EMAIL, JIRA_API_TOKEN)
+    headers = {"Accept": "application/json"}
+    params = {"jql": jql, "maxResults": 1, "fields": "key"}
+
+    try:
+        response = requests.get(url, headers=headers, auth=auth, params=params)
+    except Exception as e:
+        print("Jira idempotency search error:", str(e))
+        return None
+
+    if response.status_code != 200:
+        print("Jira idempotency search failed:", response.status_code, response.text)
+        return None
+
+    issues = response.json().get("issues", [])
+    if issues:
+        return issues[0].get("key")
+    return None
+
+
+def persist_jira_id(internal_id, jira_id):
+    """Write a freshly created jira_id back onto the email document so the
+    dashboard reflects it. Safe to call on every successful creation/retry."""
+    if not internal_id or not jira_id:
+        return
+    emails_collection.update_one(
+        {"internal_id": internal_id},
+        {"$set": {"jira_id": jira_id, "status": "Open"}}
+    )
+
+
+def create_jira_ticket(data, rule_actions, attachments=None, from_retry=False):
     url = f"{JIRA_BASE_URL}/rest/api/3/issue"
 
     auth = (JIRA_EMAIL, JIRA_API_TOKEN)
@@ -22,6 +67,17 @@ def create_jira_ticket(data, rule_actions, attachments=None):
         "Accept": "application/json",
         "Content-Type": "application/json"
     }
+
+    internal_id = data.get("internal_id")
+
+    # ✅ Idempotency: if a Jira ticket for this email already exists, reuse it
+    # instead of creating a duplicate. Covers the case where an earlier attempt
+    # created the ticket (HTTP 201) but the response was lost before the key was
+    # recorded, and the job was then retried.
+    existing_key = find_existing_jira_by_internal_id(internal_id)
+    if existing_key:
+        print(f"Jira ticket already exists for {internal_id}: {existing_key}")
+        return existing_key
 
     # ✅ Step 1: Base fields
     fields = {
@@ -54,6 +110,11 @@ def create_jira_ticket(data, rule_actions, attachments=None):
         # ✅ NEW FIELD (Infra_App)
         "customfield_10099": {"value": "App"}
     }
+
+    # ✅ Tag the ticket with our internal_id so future retries can detect it
+    # and avoid creating duplicates (see find_existing_jira_by_internal_id).
+    if internal_id:
+        fields["labels"] = [_internal_id_label(internal_id)]
 
     # ✅ Step 2: Apply rule-based fields
 
@@ -105,18 +166,21 @@ def create_jira_ticket(data, rule_actions, attachments=None):
     else:
         print("Jira Error:", response.text)
 
-        # ✅ STORE FAILED JOB
-        failed_jobs_collection.insert_one({
-            "type": "jira",
-            "payload": {
-                "data": data,
-                "rule_actions": rule_actions
-            },
-            "retry_count": 0,
-            "status": "pending",
-            "error": response.text,
-            "created_at": datetime.utcnow()
-        })
+        # ✅ When called from a retry the scheduler already owns the existing
+        # failed-job record, so don't insert a duplicate here.
+        if not from_retry:
+            # ✅ STORE FAILED JOB
+            failed_jobs_collection.insert_one({
+                "type": "jira",
+                "payload": {
+                    "data": data,
+                    "rule_actions": rule_actions
+                },
+                "retry_count": 0,
+                "status": "pending",
+                "error": response.text,
+                "created_at": datetime.utcnow()
+            })
 
         return None
     

@@ -4,7 +4,7 @@ from app.services.mail_service import fetch_unseen_emails
 from app.services.jira_sync_service import sync_jira_fields
 from app.services.jira_status_service import sync_jira_status
 from app.db.mongo import failed_jobs_collection
-from app.services.jira_service import create_jira_ticket
+from app.services.jira_service import create_jira_ticket, persist_jira_id
 from app.services.mailbox_service import get_enabled_mailboxes
 
 
@@ -40,16 +40,24 @@ def retry_failed_jobs():
 
     for job in jobs:
         try:
-            if job["type"] == "jira":
-                payload = job["payload"]
-                result = create_jira_ticket(payload["data"], payload["rule_actions"])
+            payload = job["payload"]
+            # from_retry=True: create_jira_ticket must NOT insert a duplicate
+            # failed-job record on failure — this existing record is reused.
+            result = create_jira_ticket(payload["data"], payload["rule_actions"], from_retry=True)
 
-                if result:
-                    failed_jobs_collection.update_one(
-                        {"_id": job["_id"]},
-                        {"$set": {"status": "completed"}}
-                    )
-                    continue
+            if result:
+                failed_jobs_collection.update_one(
+                    {"_id": job["_id"]},
+                    {"$set": {"status": "completed"}}
+                )
+                # ✅ reflect the created ticket on the email document
+                persist_jira_id(payload.get("data", {}).get("internal_id"), result)
+                continue
+
+            # create_jira_ticket returns None (no exception) on API failure,
+            # so a falsy result is a failed attempt — raise so retry_count is
+            # incremented below and the retry_count < 3 cap can take effect.
+            raise RuntimeError(job.get("error") or "Jira creation failed on retry")
 
         except Exception as e:
             failed_jobs_collection.update_one(
