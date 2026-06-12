@@ -11,21 +11,25 @@ from app.config.settings import (
 from app.db.mongo import failed_jobs_collection, emails_collection
 from datetime import datetime
 import re
+import hashlib
 from app.config.settings import JIRA_ONPREM_URL, JIRA_ONPREM_USER, JIRA_ONPREM_PASS
 
 
-def _internal_id_label(internal_id):
-    # Jira labels cannot contain spaces.
-    return f"mailjira-{str(internal_id).replace(' ', '-')}"
+def _message_id_label(message_id):
+    """Build a fixed, label-safe token from an email Message-ID. Message-IDs are
+    long and contain characters Jira labels disallow, so we hash them."""
+    digest = hashlib.sha1(str(message_id).encode("utf-8")).hexdigest()[:20]
+    return f"mailjira-mid-{digest}"
 
 
-def find_existing_jira_by_internal_id(internal_id):
-    """Return the key of an existing Jira ticket tagged with this internal_id,
-    or None. Keeps create_jira_ticket idempotent across retries."""
-    if not internal_id:
+def find_existing_jira_by_message_id(message_id):
+    """Return the key of an existing Jira ticket tagged with this email's
+    Message-ID, or None. Used only on retries to avoid creating a duplicate when
+    a prior attempt created the ticket (HTTP 201) but the response was lost."""
+    if not message_id:
         return None
 
-    jql = f'project = "{JIRA_PROJECT_KEY}" AND labels = "{_internal_id_label(internal_id)}"'
+    jql = f'project = "{JIRA_PROJECT_KEY}" AND labels = "{_message_id_label(message_id)}"'
     url = f"{JIRA_BASE_URL}/rest/api/3/search/jql"
     auth = (JIRA_EMAIL, JIRA_API_TOKEN)
     headers = {"Accept": "application/json"}
@@ -68,16 +72,17 @@ def create_jira_ticket(data, rule_actions, attachments=None, from_retry=False):
         "Content-Type": "application/json"
     }
 
-    internal_id = data.get("internal_id")
+    message_id = data.get("message_id")
 
-    # ✅ Idempotency: if a Jira ticket for this email already exists, reuse it
-    # instead of creating a duplicate. Covers the case where an earlier attempt
-    # created the ticket (HTTP 201) but the response was lost before the key was
-    # recorded, and the job was then retried.
-    existing_key = find_existing_jira_by_internal_id(internal_id)
-    if existing_key:
-        print(f"Jira ticket already exists for {internal_id}: {existing_key}")
-        return existing_key
+    # ✅ Retry idempotency: ONLY on a retry, check whether a previous attempt
+    # already created this ticket (matched by the email's stable Message-ID) but
+    # lost the response. A genuinely new email always has a fresh Message-ID, so
+    # this never matches for new mail — a new mail always creates a new ticket.
+    if from_retry and message_id:
+        existing_key = find_existing_jira_by_message_id(message_id)
+        if existing_key:
+            print(f"Jira ticket already exists for message_id {message_id}: {existing_key}")
+            return existing_key
 
     # ✅ Step 1: Base fields
     fields = {
@@ -111,10 +116,10 @@ def create_jira_ticket(data, rule_actions, attachments=None, from_retry=False):
         "customfield_10099": {"value": "App"}
     }
 
-    # ✅ Tag the ticket with our internal_id so future retries can detect it
-    # and avoid creating duplicates (see find_existing_jira_by_internal_id).
-    if internal_id:
-        fields["labels"] = [_internal_id_label(internal_id)]
+    # ✅ Tag the ticket with the email's Message-ID so a later retry can detect
+    # this ticket and avoid creating a duplicate.
+    if message_id:
+        fields["labels"] = [_message_id_label(message_id)]
 
     # ✅ Step 2: Apply rule-based fields
 

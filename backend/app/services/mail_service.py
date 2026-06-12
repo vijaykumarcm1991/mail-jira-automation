@@ -139,12 +139,16 @@ def fetch_unseen_emails(mailbox=None):
             print("Matched Ticket:", existing_ticket)
 
             if existing_ticket and existing_ticket.get("jira_id"):
-                from app.services.jira_service import add_comment_to_jira
+                from app.services.jira_service import add_comment_to_jira, upload_attachments
 
                 add_comment_to_jira(
                     existing_ticket["jira_id"],
                     body
                 )
+
+                # ✅ Attach any files from the reply to the existing ticket
+                if attachments:
+                    upload_attachments(existing_ticket["jira_id"], attachments)
 
                 print(f"Added comment to {existing_ticket['jira_id']} via message-id")
 
