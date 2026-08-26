@@ -163,7 +163,6 @@ def sync_jira_status():
                 {"$set": {"status": latest_status}}
             )
 
-        if latest_status and latest_status != old_status:
             # 🔥 BLOCK if already resolved by L3
             if resolution_source == "L3":
                 continue

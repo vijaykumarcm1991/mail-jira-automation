@@ -1,4 +1,5 @@
 import requests
+from html.parser import HTMLParser
 from app.config.settings import (
     JIRA_BASE_URL,
     JIRA_EMAIL,
@@ -62,6 +63,157 @@ def persist_jira_id(internal_id, jira_id):
     )
 
 
+class _HtmlToAdf(HTMLParser):
+    """Convert an HTML string into an Atlassian Document Format (ADF) tree."""
+
+    _MARKS = {
+        'strong': 'strong', 'b': 'strong',
+        'em': 'em',         'i': 'em',
+        'code': 'code',
+        'u': 'underline',
+        's': 'strike', 'strike': 'strike', 'del': 'strike',
+    }
+    _HEADINGS = {'h1': 1, 'h2': 2, 'h3': 3, 'h4': 4, 'h5': 5, 'h6': 6}
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self._doc = []
+        self._para = None       # open block node being built
+        self._marks = []        # stack of active inline marks
+        self._lists = []        # stack of [list_node, current_list_item]
+        self._in_pre = False
+
+    # ── helpers ───────────────────────────────────────────────────────────────
+
+    def _flush_para(self):
+        if self._para is None:
+            return
+        if self._para.get("content"):
+            self._push_block(self._para)
+        self._para = None
+
+    def _push_block(self, node):
+        """Add a finished block node to the right container."""
+        if self._lists:
+            item = self._lists[-1][1]
+            if item is not None:
+                item["content"].append(node)
+        else:
+            self._doc.append(node)
+
+    def _open_para(self, node_type="paragraph", **attrs):
+        self._flush_para()
+        self._para = {"type": node_type, "content": []}
+        if attrs:
+            self._para["attrs"] = attrs
+
+    def _inline(self, node):
+        if self._para is None:
+            self._para = {"type": "paragraph", "content": []}
+        self._para["content"].append(node)
+
+    def _text_node(self, text):
+        node = {"type": "text", "text": text}
+        if self._marks:
+            node["marks"] = [dict(m) for m in self._marks]
+        return node
+
+    # ── tag callbacks ─────────────────────────────────────────────────────────
+
+    def handle_starttag(self, tag, attrs):
+        attrs_d = dict(attrs)
+        if tag == 'p':
+            self._open_para()
+        elif tag == 'div':
+            self._flush_para()
+        elif tag in self._HEADINGS:
+            self._open_para("heading", level=self._HEADINGS[tag])
+        elif tag == 'pre':
+            self._flush_para()
+            self._in_pre = True
+            self._para = {"type": "codeBlock", "attrs": {}, "content": []}
+        elif tag in ('ul', 'ol'):
+            self._flush_para()
+            ltype = "bulletList" if tag == 'ul' else "orderedList"
+            self._lists.append([{"type": ltype, "content": []}, None])
+        elif tag == 'li':
+            self._flush_para()
+            if self._lists:
+                item = {"type": "listItem", "content": []}
+                self._lists[-1][0]["content"].append(item)
+                self._lists[-1][1] = item
+        elif tag == 'br':
+            self._inline({"type": "hardBreak"})
+        elif tag == 'a':
+            href = attrs_d.get('href', '').strip()
+            if href and not href.startswith(('javascript:', '#')):
+                self._marks.append({"type": "link", "attrs": {"href": href}})
+        elif tag in self._MARKS:
+            self._marks.append({"type": self._MARKS[tag]})
+
+    def handle_endtag(self, tag):
+        if tag in ('p', 'div', 'blockquote') or tag in self._HEADINGS:
+            self._flush_para()
+        elif tag == 'pre':
+            self._in_pre = False
+            self._flush_para()
+        elif tag in ('ul', 'ol'):
+            self._flush_para()
+            if self._lists:
+                list_node, _ = self._lists.pop()
+                if list_node.get("content"):
+                    self._push_block(list_node)
+        elif tag == 'li':
+            self._flush_para()
+        elif tag == 'a':
+            for i in range(len(self._marks) - 1, -1, -1):
+                if self._marks[i].get("type") == "link":
+                    self._marks.pop(i)
+                    break
+        elif tag in self._MARKS:
+            mtype = self._MARKS[tag]
+            for i in range(len(self._marks) - 1, -1, -1):
+                if self._marks[i].get("type") == mtype:
+                    self._marks.pop(i)
+                    break
+
+    def handle_data(self, data):
+        if self._in_pre:
+            if self._para is None:
+                self._para = {"type": "codeBlock", "attrs": {}, "content": []}
+            self._para["content"].append({"type": "text", "text": data})
+            return
+        # Collapse source whitespace the way a browser would
+        text = re.sub(r'[\r\n\t]+', ' ', data)
+        text = re.sub(r' {2,}', ' ', text)
+        if text.strip() == '' and self._para is None:
+            return
+        if text:
+            self._inline(self._text_node(text))
+
+    def result(self):
+        self._flush_para()
+        while self._lists:
+            list_node, _ = self._lists.pop()
+            if list_node.get("content"):
+                self._doc.append(list_node)
+        return {
+            "version": 1,
+            "type": "doc",
+            "content": self._doc or [{"type": "paragraph", "content": []}],
+        }
+
+
+def html_to_adf(html_text):
+    """Convert an HTML string to an ADF document dict."""
+    parser = _HtmlToAdf()
+    try:
+        parser.feed(html_text)
+    except Exception:
+        pass
+    return parser.result()
+
+
 def create_jira_ticket(data, rule_actions, attachments=None, from_retry=False):
     url = f"{JIRA_BASE_URL}/rest/api/3/issue"
 
@@ -89,7 +241,7 @@ def create_jira_ticket(data, rule_actions, attachments=None, from_retry=False):
         "project": {"key": JIRA_PROJECT_KEY},
         "summary": data.get("subject"),
 
-        "description": {
+        "description": data.get("description_adf") or {
             "type": "doc",
             "version": 1,
             "content": [
@@ -384,14 +536,15 @@ def get_attachments(issue_key, skip_files=None):
     return files
 
 
-def add_comment_to_jira(issue_key, comment, is_customer_visible=True):
+def add_comment_to_jira(issue_key, comment, is_customer_visible=True, body_adf=None):
     """Add a comment to a JSM ticket with visibility control.
 
     Args:
         issue_key: The JSM ticket key (e.g., 'TICKET-123')
-        comment: The comment text to add
+        comment: Fallback plain-text comment (used when body_adf is None)
         is_customer_visible: If True, comment is visible to customers and may trigger notifications.
                            If False, comment is internal (internal note) and won't trigger notifications.
+        body_adf: Optional pre-built ADF document dict (used instead of plain-text comment when set)
 
     Returns:
         bool: True if comment was successfully added, False otherwise
@@ -406,7 +559,7 @@ def add_comment_to_jira(issue_key, comment, is_customer_visible=True):
     }
 
     payload = {
-        "body": {
+        "body": body_adf or {
             "type": "doc",
             "version": 1,
             "content": [

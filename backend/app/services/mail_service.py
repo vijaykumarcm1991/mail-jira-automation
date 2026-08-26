@@ -3,9 +3,10 @@ import email
 from email.header import decode_header
 from datetime import datetime
 import re
+import html as _html
 from jinja2 import Template
 import pytz
-from app.services.jira_service import create_jira_ticket
+from app.services.jira_service import create_jira_ticket, add_comment_to_jira, upload_attachments, html_to_adf
 from app.db.mongo import emails_collection
 from app.utils.helpers import generate_internal_id
 from app.models.email_model import create_email_doc
@@ -28,6 +29,16 @@ import uuid
 from app.services.mailbox_service import env_mailbox, get_default_outbound_mailbox
 
 IST = pytz.timezone(TIMEZONE)
+
+
+def _strip_html(raw):
+    """Convert HTML email body to plain text."""
+    raw = re.sub(r'<br\s*/?>', '\n', raw, flags=re.IGNORECASE)
+    raw = re.sub(r'</(p|div|li|tr|h[1-6])>', '\n', raw, flags=re.IGNORECASE)
+    raw = re.sub(r'<[^>]+>', '', raw)
+    raw = _html.unescape(raw)
+    raw = re.sub(r'\n{3,}', '\n\n', raw)
+    return raw.strip()
 
 
 def clean_text(text):
@@ -83,25 +94,35 @@ def fetch_unseen_emails(mailbox=None):
         cc = msg.get("Cc")
 
         body = ""
-        attachments = []  # 🔥 NEW
+        _html_body = ""
+        attachments = []
 
         if msg.is_multipart():
             for part in msg.walk():
                 content_type = part.get_content_type()
                 content_disposition = str(part.get("Content-Disposition"))
+                charset = part.get_content_charset() or "utf-8"
 
-                # ✅ BODY
-                if content_type == "text/plain" and "attachment" not in content_disposition:
-                    body = part.get_payload(decode=True).decode()
-
-                # ✅ ATTACHMENTS
-                if "attachment" in content_disposition:
+                if "attachment" not in content_disposition:
+                    if content_type == "text/plain" and not body:
+                        body = part.get_payload(decode=True).decode(charset, errors="replace")
+                    elif content_type == "text/html" and not _html_body:
+                        _html_body = part.get_payload(decode=True).decode(charset, errors="replace")
+                elif "attachment" in content_disposition:
                     filename = part.get_filename()
                     if filename:
                         file_data = part.get_payload(decode=True)
                         attachments.append((filename, file_data))
         else:
-            body = msg.get_payload(decode=True).decode()
+            charset = msg.get_content_charset() or "utf-8"
+            _raw = msg.get_payload(decode=True).decode(charset, errors="replace")
+            if msg.get_content_type() == "text/html":
+                _html_body = _raw
+            else:
+                body = _raw
+
+        if not body and _html_body:
+            body = _strip_html(_html_body)
 
         data = {
             "internal_id": internal_id,
@@ -113,6 +134,7 @@ def fetch_unseen_emails(mailbox=None):
             "mailbox_email": mailbox.get("email"),
             "status": "New",
             "description": clean_text(body),
+            "description_adf": html_to_adf(_html_body) if _html_body else None,
             "message_id": message_id,
             "email_attachments": [name for name, _ in attachments],  # 🔥 NEW
             "created_at": datetime.now(IST)
@@ -139,11 +161,10 @@ def fetch_unseen_emails(mailbox=None):
             print("Matched Ticket:", existing_ticket)
 
             if existing_ticket and existing_ticket.get("jira_id"):
-                from app.services.jira_service import add_comment_to_jira, upload_attachments
-
                 add_comment_to_jira(
                     existing_ticket["jira_id"],
-                    body
+                    body,
+                    body_adf=html_to_adf(_html_body) if _html_body else None
                 )
 
                 # ✅ Attach any files from the reply to the existing ticket
@@ -207,9 +228,6 @@ def fetch_unseen_emails(mailbox=None):
             emails_collection.insert_one(doc)
         except Exception as e:
             print("DB insert skipped (new ticket):", str(e))
-
-        # ✅ 3. mark as seen
-        mail.store(e_id, '+FLAGS', '\\Seen')
 
     mail.logout()
 

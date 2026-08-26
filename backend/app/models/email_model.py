@@ -13,6 +13,7 @@ def create_email_doc(data):
         "mailbox_id": data.get("mailbox_id"),
         "mailbox_email": data.get("mailbox_email"),
         "status": data.get("status", "Open"),
+        "description": data.get("description", ""),
         "message_id": data.get("message_id"),
         "system_message_id": data.get("system_message_id"),
         "email_attachments": data.get("email_attachments", []),
