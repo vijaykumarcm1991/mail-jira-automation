@@ -2,7 +2,10 @@ from datetime import datetime
 import imaplib
 import smtplib
 import uuid
+import base64
+import time
 from email.mime.text import MIMEText
+import requests as _req
 
 import pytz
 from bson import ObjectId
@@ -37,8 +40,10 @@ def serialize_mailbox(mailbox, include_secret=False):
     if not include_secret:
         data.pop("password", None)
         data.pop("smtp_password", None)
+        data.pop("ms_client_secret", None)
     data["has_password"] = bool(mailbox.get("password"))
     data["has_smtp_password"] = bool(mailbox.get("smtp_password"))
+    data["has_ms_client_secret"] = bool(mailbox.get("ms_client_secret"))
     return data
 
 
@@ -108,11 +113,43 @@ def get_mailbox_for_email_doc(email_doc):
 
 def validate_mailbox_payload(data, existing=None):
     existing = existing or {}
+    auth_type = str(data.get("auth_type") or existing.get("auth_type") or "basic").strip()
     email = clean_email(data.get("email", existing.get("email")))
     name = str(data.get("name", existing.get("name") or email)).strip()
+
+    if auth_type == "oauth2":
+        ms_client_id = str(data.get("ms_client_id") or existing.get("ms_client_id") or "").strip()
+        ms_client_secret = data.get("ms_client_secret") or existing.get("ms_client_secret")
+        ms_tenant_id = str(data.get("ms_tenant_id") or existing.get("ms_tenant_id") or "").strip()
+        imap_server = str(data.get("imap_server") or existing.get("imap_server") or "outlook.office365.com").strip()
+        smtp_host = str(data.get("smtp_host") or existing.get("smtp_host") or "smtp.office365.com").strip()
+        smtp_port = int(data.get("smtp_port") or existing.get("smtp_port") or 587)
+        smtp_user = str(data.get("smtp_user") or existing.get("smtp_user") or email).strip()
+
+        if not email or not ms_client_id or not ms_client_secret or not ms_tenant_id:
+            raise HTTPException(
+                status_code=400,
+                detail="Email, client ID, client secret, and tenant ID are required for Microsoft 365 OAuth2",
+            )
+
+        return {
+            "auth_type": "oauth2",
+            "name": name,
+            "email": email,
+            "imap_server": imap_server,
+            "smtp_host": smtp_host,
+            "smtp_port": smtp_port,
+            "smtp_user": smtp_user,
+            "ms_client_id": ms_client_id,
+            "ms_client_secret": ms_client_secret,
+            "ms_tenant_id": ms_tenant_id,
+            "enabled": bool(data.get("enabled", existing.get("enabled", True))),
+            "updated_at": datetime.now(IST),
+        }
+
+    # basic auth
     imap_server = str(data.get("imap_server", existing.get("imap_server", ""))).strip()
     password = data.get("password") or existing.get("password")
-
     smtp_host = str(data.get("smtp_host") or existing.get("smtp_host") or SMTP_HOST or "").strip()
     smtp_port = int(data.get("smtp_port") or existing.get("smtp_port") or SMTP_PORT or 465)
     smtp_user = str(data.get("smtp_user") or existing.get("smtp_user") or email).strip()
@@ -124,6 +161,7 @@ def validate_mailbox_payload(data, existing=None):
         raise HTTPException(status_code=400, detail="SMTP host, user, and password are required")
 
     return {
+        "auth_type": "basic",
         "name": name,
         "email": email,
         "password": password,
@@ -137,10 +175,91 @@ def validate_mailbox_payload(data, existing=None):
     }
 
 
+_token_cache = {}
+
+
+def get_oauth2_token(client_id, client_secret, tenant_id):
+    """Return a cached-or-fresh Microsoft OAuth2 access token (client credentials flow)."""
+    key = (client_id, tenant_id)
+    cached = _token_cache.get(key)
+    if cached and time.time() < cached["expires_at"] - 60:
+        return cached["token"]
+
+    url = f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token"
+    resp = _req.post(url, data={
+        "grant_type": "client_credentials",
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "scope": "https://outlook.office365.com/.default",
+    }, timeout=15)
+    resp.raise_for_status()
+    token_data = resp.json()
+    token = token_data["access_token"]
+    _token_cache[key] = {
+        "token": token,
+        "expires_at": time.time() + token_data.get("expires_in", 3600),
+    }
+    return token
+
+
+def connect_imap(mailbox):
+    """Return an authenticated imaplib.IMAP4_SSL instance."""
+    mail = imaplib.IMAP4_SSL(mailbox["imap_server"])
+    if mailbox.get("auth_type") == "oauth2":
+        token = get_oauth2_token(
+            mailbox["ms_client_id"],
+            mailbox["ms_client_secret"],
+            mailbox["ms_tenant_id"],
+        )
+        # imaplib.authenticate base64-encodes the callback's return value before sending
+        raw = f"user={mailbox['email']}\x01auth=Bearer {token}\x01\x01".encode()
+        mail.authenticate("XOAUTH2", lambda challenge: raw)
+    else:
+        mail.login(mailbox["email"], mailbox["password"])
+    return mail
+
+
+def connect_smtp(mailbox):
+    """Return an authenticated smtplib.SMTP(SSL) instance."""
+    smtp_host = mailbox.get("smtp_host", "")
+    smtp_port = int(mailbox.get("smtp_port") or 465)
+
+    if mailbox.get("auth_type") == "oauth2":
+        server = smtplib.SMTP(smtp_host, smtp_port, timeout=30)
+        server.ehlo()
+        server.starttls()
+        server.ehlo()
+        token = get_oauth2_token(
+            mailbox["ms_client_id"],
+            mailbox["ms_client_secret"],
+            mailbox["ms_tenant_id"],
+        )
+        raw = f"user={mailbox['email']}\x01auth=Bearer {token}\x01\x01".encode()
+        server.auth("XOAUTH2", lambda x: raw, initial_response_ok=True)
+    else:
+        if smtp_port == 465:
+            server = smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=30)
+        else:
+            server = smtplib.SMTP(smtp_host, smtp_port, timeout=30)
+            server.ehlo()
+            server.starttls()
+            server.ehlo()
+        server.login(
+            mailbox.get("smtp_user") or mailbox.get("email", ""),
+            mailbox.get("smtp_password", ""),
+        )
+    return server
+
+
 def test_imap_connection(mailbox):
-    with imaplib.IMAP4_SSL(mailbox["imap_server"]) as client:
-        client.login(mailbox["email"], mailbox["password"])
-        client.select("inbox", readonly=True)
+    mail = connect_imap(mailbox)
+    try:
+        mail.select("inbox", readonly=True)
+    finally:
+        try:
+            mail.logout()
+        except Exception:
+            pass
 
 
 def send_test_email(mailbox, recipient):
@@ -157,18 +276,7 @@ def send_test_email(mailbox, recipient):
     msg["To"] = recipient
     msg["Message-ID"] = f"<{uuid.uuid4()}@mail-jira.local>"
 
-    smtp_port = int(mailbox["smtp_port"])
-    if smtp_port == 465:
-        server = smtplib.SMTP_SSL(mailbox["smtp_host"], smtp_port, timeout=30)
-    else:
-        server = smtplib.SMTP(mailbox["smtp_host"], smtp_port, timeout=30)
-
-    with server:
-        if smtp_port != 465:
-            server.ehlo()
-            server.starttls()
-            server.ehlo()
-        server.login(mailbox["smtp_user"], mailbox["smtp_password"])
+    with connect_smtp(mailbox) as server:
         server.sendmail(mailbox["email"], [recipient], msg.as_string())
 
 

@@ -26,7 +26,7 @@ from email.mime.base import MIMEBase
 from email import encoders
 from app.db.mongo import failed_jobs_collection
 import uuid
-from app.services.mailbox_service import env_mailbox, get_default_outbound_mailbox
+from app.services.mailbox_service import env_mailbox, get_default_outbound_mailbox, connect_imap, connect_smtp
 
 IST = pytz.timezone(TIMEZONE)
 
@@ -55,8 +55,7 @@ def fetch_unseen_emails(mailbox=None):
         print("No mailbox configured")
         return
 
-    mail = imaplib.IMAP4_SSL(mailbox["imap_server"])
-    mail.login(mailbox["email"], mailbox["password"])
+    mail = connect_imap(mailbox)
     mail.select("inbox")
 
     status, messages = mail.search(None, '(UNSEEN)')
@@ -240,7 +239,8 @@ def send_email(to_list, subject, body, cc_list=None, attachments=None, message_i
     smtp_password = mailbox.get("smtp_password") if mailbox else SMTP_PASS
 
     try:
-        if not smtp_host or not smtp_port or not smtp_user or not smtp_password:
+        is_oauth2 = bool(mailbox and mailbox.get("auth_type") == "oauth2")
+        if not is_oauth2 and (not smtp_host or not smtp_port or not smtp_user or not smtp_password):
             raise ValueError("SMTP host, port, user, and password are required")
 
         recipients = list(to_list or []) + list(cc_list or [])
@@ -270,19 +270,20 @@ def send_email(to_list, subject, body, cc_list=None, attachments=None, message_i
                 part.add_header("Content-Disposition", f"attachment; filename={filename}")
                 msg.attach(part)
 
-        smtp_port = int(smtp_port)
-        if smtp_port == 465:
-            server = smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=30)
+        if mailbox:
+            server = connect_smtp(mailbox)
         else:
-            server = smtplib.SMTP(smtp_host, smtp_port, timeout=30)
-
-        with server:
-            if smtp_port != 465:
+            smtp_port = int(smtp_port)
+            if smtp_port == 465:
+                server = smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=30)
+            else:
+                server = smtplib.SMTP(smtp_host, smtp_port, timeout=30)
                 server.ehlo()
                 server.starttls()
                 server.ehlo()
             server.login(smtp_user, smtp_password)
-            # ✅ Generate message-id manually BEFORE sending
+
+        with server:
             generated_msg_id = f"<{uuid.uuid4()}@mail-jira.local>"
             msg["Message-ID"] = generated_msg_id
             server.sendmail(from_email, recipients, msg.as_string())

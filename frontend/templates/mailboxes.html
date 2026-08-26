@@ -16,6 +16,7 @@
         <h3 class="font-semibold text-lg mb-3" x-text="form._id ? 'Edit Mailbox' : 'Add Mailbox'"></h3>
 
         <div class="grid grid-cols-3 gap-3">
+            <!-- Row 1: name, email, auth type -->
             <input x-model="form.name"
                    placeholder="Display name"
                    class="border p-2">
@@ -25,34 +26,82 @@
                    placeholder="Mailbox email"
                    class="border p-2">
 
-            <input x-model="form.password"
-                   type="password"
-                   :placeholder="form._id ? 'Mailbox password (leave blank to keep)' : 'Mailbox password'"
-                   class="border p-2">
+            <div class="flex flex-col justify-center gap-1 border p-2 bg-gray-50 rounded">
+                <span class="text-xs text-gray-500 font-medium">Connection type</span>
+                <div class="flex gap-4">
+                    <label class="flex items-center gap-1 cursor-pointer text-sm">
+                        <input type="radio" x-model="form.auth_type" value="basic">
+                        Basic Auth
+                    </label>
+                    <label class="flex items-center gap-1 cursor-pointer text-sm">
+                        <input type="radio" x-model="form.auth_type" value="oauth2">
+                        Microsoft 365
+                    </label>
+                </div>
+            </div>
 
-            <input x-model="form.imap_server"
-                   placeholder="IMAP server"
-                   class="border p-2">
+            <!-- Basic auth fields -->
+            <div class="col-span-3 grid grid-cols-3 gap-3" x-show="form.auth_type === 'basic'">
+                <input x-model="form.password"
+                       type="password"
+                       :placeholder="form._id ? 'Mailbox password (leave blank to keep)' : 'Mailbox password'"
+                       class="border p-2">
 
-            <input x-model="form.smtp_host"
-                   placeholder="SMTP host"
-                   class="border p-2">
+                <input x-model="form.imap_server"
+                       placeholder="IMAP server"
+                       class="border p-2">
 
-            <input x-model.number="form.smtp_port"
-                   type="number"
-                   min="1"
-                   placeholder="SMTP port"
-                   class="border p-2">
+                <input x-model="form.smtp_host"
+                       placeholder="SMTP host"
+                       class="border p-2">
 
-            <input x-model="form.smtp_user"
-                   placeholder="SMTP user"
-                   class="border p-2">
+                <input x-model.number="form.smtp_port"
+                       type="number"
+                       min="1"
+                       placeholder="SMTP port"
+                       class="border p-2">
 
-            <input x-model="form.smtp_password"
-                   type="password"
-                   :placeholder="form._id ? 'SMTP password (leave blank to keep)' : 'SMTP password'"
-                   class="border p-2">
+                <input x-model="form.smtp_user"
+                       placeholder="SMTP user"
+                       class="border p-2">
 
+                <input x-model="form.smtp_password"
+                       type="password"
+                       :placeholder="form._id ? 'SMTP password (leave blank to keep)' : 'SMTP password'"
+                       class="border p-2">
+            </div>
+
+            <!-- OAuth2 fields (Microsoft 365) -->
+            <div class="col-span-3 grid grid-cols-3 gap-3" x-show="form.auth_type === 'oauth2'">
+                <input x-model="form.ms_tenant_id"
+                       placeholder="Tenant ID (Directory ID)"
+                       class="border p-2">
+
+                <input x-model="form.ms_client_id"
+                       placeholder="Client ID (Application ID)"
+                       class="border p-2">
+
+                <input x-model="form.ms_client_secret"
+                       type="password"
+                       :placeholder="form.has_ms_client_secret ? 'Client secret (leave blank to keep)' : 'Client secret'"
+                       class="border p-2">
+
+                <input x-model="form.imap_server"
+                       placeholder="IMAP server (default: outlook.office365.com)"
+                       class="border p-2">
+
+                <input x-model="form.smtp_host"
+                       placeholder="SMTP host (default: smtp.office365.com)"
+                       class="border p-2">
+
+                <input x-model.number="form.smtp_port"
+                       type="number"
+                       min="1"
+                       placeholder="SMTP port (default: 587)"
+                       class="border p-2">
+            </div>
+
+            <!-- Enabled toggle (always visible) -->
             <label class="flex items-center gap-2">
                 <input type="checkbox" x-model="form.enabled">
                 <span>Enabled</span>
@@ -89,6 +138,9 @@
                     <div>
                         <div class="font-semibold" x-text="mailbox.name || mailbox.email"></div>
                         <div class="text-xs text-gray-500" x-text="mailbox.email"></div>
+                        <span class="text-xs px-2 py-0.5 rounded mt-1 inline-block"
+                              :class="mailbox.auth_type === 'oauth2' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-700'"
+                              x-text="mailbox.auth_type === 'oauth2' ? 'Microsoft 365' : 'Basic Auth'"></span>
                     </div>
 
                     <div class="text-sm">
@@ -153,12 +205,17 @@ function mailboxesApp() {
                 _id: "",
                 name: "",
                 email: "",
+                auth_type: "basic",
                 password: "",
                 imap_server: "",
                 smtp_host: "",
                 smtp_port: 465,
                 smtp_user: "",
                 smtp_password: "",
+                ms_tenant_id: "",
+                ms_client_id: "",
+                ms_client_secret: "",
+                has_ms_client_secret: false,
                 enabled: true
             }
         },
@@ -170,12 +227,17 @@ function mailboxesApp() {
                 _id: mailbox._id,
                 name: mailbox.name || "",
                 email: mailbox.email || "",
+                auth_type: mailbox.auth_type || "basic",
                 password: "",
                 imap_server: mailbox.imap_server || "",
                 smtp_host: mailbox.smtp_host || "",
                 smtp_port: mailbox.smtp_port || 465,
                 smtp_user: mailbox.smtp_user || mailbox.email || "",
                 smtp_password: "",
+                ms_tenant_id: mailbox.ms_tenant_id || "",
+                ms_client_id: mailbox.ms_client_id || "",
+                ms_client_secret: "",
+                has_ms_client_secret: mailbox.has_ms_client_secret || false,
                 enabled: mailbox.enabled
             }
         },
@@ -183,8 +245,10 @@ function mailboxesApp() {
         payload() {
             const data = {...this.form}
             delete data._id
+            delete data.has_ms_client_secret
             if (!data.password) delete data.password
             if (!data.smtp_password) delete data.smtp_password
+            if (!data.ms_client_secret) delete data.ms_client_secret
             return data
         },
 
