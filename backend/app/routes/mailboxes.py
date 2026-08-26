@@ -100,6 +100,7 @@ def test_mailbox_connection(mailbox_id: str, request: Request, data: dict):
     except HTTPException:
         raise
     except Exception as exc:
+        print(f"Mailbox test failed [{mailbox.get('email')}]: {exc}")
         raise HTTPException(status_code=400, detail=str(exc))
 
     log_audit(
