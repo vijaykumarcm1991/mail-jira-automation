@@ -88,8 +88,29 @@ def fetch_jira_issue_state(issue_key):
     return {
         "status": fields.get("status", {}).get("name"),
         "updated_at": parse_jira_datetime(fields.get("updated")),
-        "external_comment": (fields.get("customfield_10101") or "").strip(),
+        "external_comment": _extract_field_text(fields.get("customfield_10101")),
     }
+
+
+def _extract_field_text(value):
+    """Return plain text from a Jira field that may be a string or an ADF document."""
+    if not value:
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, dict):
+        return _adf_to_text(value).strip()
+    return ""
+
+
+def _adf_to_text(node):
+    """Recursively extract plain text from an ADF node."""
+    if not isinstance(node, dict):
+        return ""
+    if node.get("type") == "text":
+        return node.get("text", "")
+    parts = [_adf_to_text(child) for child in node.get("content", [])]
+    return "\n".join(p for p in parts if p)
 
 
 def should_send_resolution_email(ticket_data, customer_visible_comment=""):
