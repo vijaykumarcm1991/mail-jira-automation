@@ -2,7 +2,6 @@ from app.db.mongo import emails_collection
 from app.config.settings import JIRA_BASE_URL, JIRA_EMAIL, JIRA_API_TOKEN
 from app.services.mail_service import send_email
 from app.db.mongo import db
-from app.services.jira_service import get_latest_customer_visible_comment
 from app.services.jira_service import get_l3_ticket_from_jsm, fetch_l3_status, add_comment_to_jira
 from app.services.mailbox_service import get_mailbox_for_email_doc
 from jinja2 import Template
@@ -88,7 +87,8 @@ def fetch_jira_issue_state(issue_key):
     fields = response.json().get("fields", {})
     return {
         "status": fields.get("status", {}).get("name"),
-        "updated_at": parse_jira_datetime(fields.get("updated"))
+        "updated_at": parse_jira_datetime(fields.get("updated")),
+        "external_comment": (fields.get("customfield_10101") or "").strip(),
     }
 
 
@@ -153,6 +153,7 @@ def sync_jira_status():
         latest_state = fetch_jira_issue_state(jira_id)
         latest_status = latest_state.get("status") if latest_state else None
         latest_updated_at = latest_state.get("updated_at") if latest_state else None
+        latest_external_comment = latest_state.get("external_comment", "") if latest_state else ""
         old_status = ticket.get("status")
         resolution_source = get_resolution_source(jira_id)
 
@@ -176,10 +177,8 @@ def sync_jira_status():
                     print(f"Skipping resolution email for {jira_id} - resolved before this service run")
                     continue
 
-                # Only send customer mail from the latest Reply to customer comment.
-                latest_visible_comment = get_latest_customer_visible_comment(jira_id)
-                if not should_send_resolution_email({**ticket, "status": latest_status}, latest_visible_comment):
-                    print(f"Skipping resolution email for {jira_id} - no customer-visible reply comment")
+                if not should_send_resolution_email({**ticket, "status": latest_status}, latest_external_comment):
+                    print(f"Skipping resolution email for {jira_id} - external comment field (customfield_10101) is empty")
                     continue
 
                 template = db["email_templates"].find_one({"type": "resolved"})
@@ -191,7 +190,7 @@ def sync_jira_status():
                 context = {
                     "jira_id": jira_id,
                     "status": latest_status,
-                    "comment": latest_visible_comment,
+                    "comment": latest_external_comment,
                     "l3_jira_id": ticket.get("l3_jira_id") or ""
                 }
 
