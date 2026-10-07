@@ -14,7 +14,12 @@ def start_mail_listener():
             print("Checking for new emails...")
             for mailbox in get_enabled_mailboxes():
                 print(f"Checking mailbox: {mailbox.get('email')}")
-                fetch_unseen_emails(mailbox)
+                # One mailbox failing (bad password, revoked OAuth2 consent, IMAP
+                # outage) must not skip the other mailboxes or the Jira syncs below.
+                try:
+                    fetch_unseen_emails(mailbox)
+                except Exception as e:
+                    print(f"Mailbox error [{mailbox.get('email')}]:", e)
 
             # ✅ Sync Jira fields every cycle (temporary)
             sync_jira_fields()

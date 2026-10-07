@@ -11,6 +11,7 @@ from app.services.audit_service import log_audit
 from app.services.auth_service import require_admin
 from app.services.mailbox_service import (
     get_mailbox_by_id,
+    mailbox_unset_fields,
     serialize_mailbox,
     test_mailbox,
     validate_mailbox_payload,
@@ -45,7 +46,11 @@ def create_mailbox(request: Request, data: dict):
         "create",
         "mailbox",
         mailbox["email"],
-        {"enabled": mailbox["enabled"], "imap_server": mailbox["imap_server"]},
+        {
+            "enabled": mailbox["enabled"],
+            "auth_type": mailbox["auth_type"],
+            "imap_server": mailbox["imap_server"],
+        },
         actor,
     )
     saved = mailboxes_collection.find_one({"_id": result.inserted_id})
@@ -59,7 +64,10 @@ def update_mailbox(mailbox_id: str, request: Request, data: dict):
     mailbox = validate_mailbox_payload(data, existing)
 
     try:
-        mailboxes_collection.update_one({"_id": existing["_id"]}, {"$set": mailbox})
+        mailboxes_collection.update_one(
+            {"_id": existing["_id"]},
+            {"$set": mailbox, "$unset": mailbox_unset_fields(mailbox["auth_type"])},
+        )
     except DuplicateKeyError:
         raise HTTPException(status_code=409, detail="Mailbox email already exists")
 
@@ -70,8 +78,11 @@ def update_mailbox(mailbox_id: str, request: Request, data: dict):
         mailbox["email"],
         {
             "enabled": mailbox["enabled"],
+            "auth_type": mailbox["auth_type"],
+            "auth_type_changed": mailbox["auth_type"] != existing.get("auth_type", "basic"),
             "imap_server": mailbox["imap_server"],
             "password_changed": bool(data.get("password") or data.get("smtp_password")),
+            "client_secret_changed": bool(data.get("ms_client_secret")),
         },
         actor,
     )

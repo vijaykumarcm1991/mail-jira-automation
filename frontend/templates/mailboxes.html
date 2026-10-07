@@ -30,11 +30,11 @@
                 <span class="text-xs text-gray-500 font-medium">Connection type</span>
                 <div class="flex gap-4">
                     <label class="flex items-center gap-1 cursor-pointer text-sm">
-                        <input type="radio" x-model="form.auth_type" value="basic">
+                        <input type="radio" x-model="form.auth_type" value="basic" @change="onAuthTypeChange()">
                         Basic Auth
                     </label>
                     <label class="flex items-center gap-1 cursor-pointer text-sm">
-                        <input type="radio" x-model="form.auth_type" value="oauth2">
+                        <input type="radio" x-model="form.auth_type" value="oauth2" @change="onAuthTypeChange()">
                         Microsoft 365
                     </label>
                 </div>
@@ -99,6 +99,21 @@
                        min="1"
                        placeholder="SMTP port (default: 587)"
                        class="border p-2">
+
+                <details class="col-span-3 text-sm bg-blue-50 border border-blue-100 rounded p-3">
+                    <summary class="cursor-pointer font-medium text-blue-900">Microsoft 365 setup checklist</summary>
+                    <ol class="list-decimal ml-5 mt-2 space-y-1 text-gray-700">
+                        <li>Microsoft Entra admin center → <b>App registrations</b> → New registration. Copy the <b>Application (client) ID</b> and <b>Directory (tenant) ID</b>.</li>
+                        <li><b>Certificates &amp; secrets</b> → New client secret. Copy the secret <b>Value</b> (not the Secret ID).</li>
+                        <li><b>API permissions</b> → Add → <i>APIs my organization uses</i> → <b>Office 365 Exchange Online</b> → Application permissions → <code>IMAP.AccessAsApp</code> and <code>SMTP.SendAsApp</code> → <b>Grant admin consent</b>.</li>
+                        <li>In Exchange Online PowerShell, register the app and give it the mailbox (use the <b>Object ID</b> from <i>Enterprise applications</i>, not from App registrations):
+                            <pre class="bg-white border rounded p-2 mt-1 overflow-x-auto text-xs">New-ServicePrincipal -AppId &lt;client-id&gt; -ObjectId &lt;enterprise-app-object-id&gt;
+Add-MailboxPermission -Identity &lt;mailbox&gt; -User &lt;enterprise-app-object-id&gt; -AccessRights FullAccess
+Set-CASMailbox -Identity &lt;mailbox&gt; -SmtpClientAuthenticationDisabled $false</pre>
+                        </li>
+                        <li>Save, then use <b>Test</b> below. Permission changes can take up to 30 minutes to apply in Exchange Online.</li>
+                    </ol>
+                </details>
             </div>
 
             <!-- Enabled toggle (always visible) -->
@@ -146,6 +161,9 @@
                     <div class="text-sm">
                         <div x-text="mailbox.imap_server"></div>
                         <div class="text-xs text-gray-500" x-text="`${mailbox.smtp_host}:${mailbox.smtp_port}`"></div>
+                        <div class="text-xs text-gray-500"
+                             x-show="mailbox.auth_type === 'oauth2'"
+                             x-text="`Tenant ${mailbox.ms_tenant_id || ''}`"></div>
                     </div>
 
                     <div>
@@ -220,6 +238,20 @@ function mailboxesApp() {
             }
         },
 
+        onAuthTypeChange() {
+            // Defaults from one connection type (e.g. SMTP port 465) don't work for the other.
+            if (this.form.auth_type === 'oauth2') {
+                this.form.imap_server = ""
+                this.form.smtp_host = ""
+                this.form.smtp_port = 587
+            } else {
+                this.form.imap_server = ""
+                this.form.smtp_host = ""
+                this.form.smtp_port = 465
+                this.form.smtp_user = this.form.email || ""
+            }
+        },
+
         editMailbox(mailbox) {
             this.error = ""
             this.message = ""
@@ -246,6 +278,15 @@ function mailboxesApp() {
             const data = {...this.form}
             delete data._id
             delete data.has_ms_client_secret
+            if (data.auth_type === 'oauth2') {
+                delete data.password
+                delete data.smtp_password
+                delete data.smtp_user
+            } else {
+                delete data.ms_tenant_id
+                delete data.ms_client_id
+                delete data.ms_client_secret
+            }
             if (!data.password) delete data.password
             if (!data.smtp_password) delete data.smtp_password
             if (!data.ms_client_secret) delete data.ms_client_secret

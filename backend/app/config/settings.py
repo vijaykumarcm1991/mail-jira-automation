@@ -10,6 +10,12 @@ EMAIL_ACCOUNT = os.getenv("EMAIL_ACCOUNT")
 EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
 IMAP_SERVER = os.getenv("IMAP_SERVER")
 
+# Env fallback mailbox connection type: "basic" (password) or "oauth2" (Microsoft 365 app-only)
+EMAIL_AUTH_TYPE = os.getenv("EMAIL_AUTH_TYPE", "basic").strip().lower()
+MS_TENANT_ID = os.getenv("MS_TENANT_ID")
+MS_CLIENT_ID = os.getenv("MS_CLIENT_ID")
+MS_CLIENT_SECRET = os.getenv("MS_CLIENT_SECRET")
+
 TIMEZONE = os.getenv("TIMEZONE", "Asia/Kolkata")
 
 JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", secrets.token_urlsafe(32))
